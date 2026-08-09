@@ -274,6 +274,7 @@ document.addEventListener('keydown', e => {
   if (tag === 'input' || tag === 'textarea' || tag === 'select') return; // don't hijack typing
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+  if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); focusFind(); return; }
   if (e.key.toLowerCase() === 'r' && S.sel.length) { e.preventDefault(); rotateSelected(); return; }
   if ((e.key === 'Delete' || e.key === 'Backspace') && S.sel.length) { e.preventDefault(); delSelected(); return; }
   if ((e.key === 'Delete' || e.key === 'Backspace') && selWire != null) { e.preventDefault(); delSelectedWire(); return; }
@@ -286,6 +287,7 @@ function render() {
   const flowEl = document.getElementById('flowtoggle');
   const flowOn = !flowEl || flowEl.checked; // missing element (old cached page) defaults to on
   let h = '';
+  const findSet = findHits.length ? new Set(findHits) : null;
   // Blocks at the ends of the selected wire, highlighted with it (see selWire).
   const wireEndHi = new Set();
   if (selWire != null && S.wires[selWire]) { wireEndHi.add(S.wires[selWire].a[0]); wireEndHi.add(S.wires[selWire].b[0]); }
@@ -344,6 +346,17 @@ function render() {
     h += '<rect x="' + b.x + '" y="' + b.y + '" width="' + d.w + '" height="' + d.h + '" fill="transparent" stroke="none"/>';
     if (sel) h += '<rect x="' + (b.x - 4) + '" y="' + (b.y - 4) + '" width="' + (d.w + 8) + '" height="' + (d.h + 8) +
       '" rx="6" fill="none" stroke="' + acc + '" stroke-width="1" stroke-dasharray="4 3"/>';
+    // Search hit (issue #2): a filled halo, deliberately a different SHAPE of
+    // mark from the selection's hollow dashed box, so the two read apart when
+    // a block is both. Every match is haloed, which puts the shape of the
+    // result set on the canvas itself; the one just revealed is brighter and
+    // fades out shortly after arrival so the eye lands on it.
+    if (findSet && findSet.has(b.id)) {
+      const fl = b.id === findFlash;
+      h += '<rect x="' + (b.x - 7) + '" y="' + (b.y - 7) + '" width="' + (d.w + 14) + '" height="' + (d.h + 14) +
+        '" rx="9" fill="' + acc + '" fill-opacity="' + (fl ? 0.2 : 0.08) + '" stroke="' + acc +
+        '" stroke-width="' + (fl ? 2.2 : 1) + '" stroke-dasharray="2 2" pointer-events="none"/>';
+    }
     h += blockSymbol(b, d, selc, selw, sfc, tx, tx3);
     getTerms(b).forEach((t, ti) => {
       const hot = S.wireFrom && S.wireFrom[0] === b.id && S.wireFrom[1] === ti;
@@ -1022,6 +1035,137 @@ function resetView() {
   Object.assign(view, VIEW0);
   view.h = view.w * viewAspect();
   render();
+}
+// ---- find a block on the canvas (issue #2) ----
+// The browser's own Ctrl+F cannot help here: the schematic is SVG drawn from
+// S.blocks at world coordinates, so a block that is off-screen is not in the
+// page's text flow and find-in-page has nothing to scroll to. On a model the
+// size of IEEE39 (147 blocks over roughly 4200 x 2700 world units) locating one
+// component by eye means zooming out until the symbols are unreadable.
+// The key is "/" rather than anything with Ctrl: Ctrl+F belongs to the browser
+// and is not ours to take, while "/" is unclaimed in every browser and is the
+// find key in vim, GitHub, Gmail and Slack. The document keydown handler
+// already ignores events originating in an input, so "/" typed into a
+// parameter field still types a slash.
+const FIND_W = 520;   // world units the view zooms IN to when revealing a match
+const FIND_MAX = 30;  // rows in the dropdown; the count still reports every hit
+let findHits = [];    // matching block ids, best match first
+let findAt = -1;      // index into findHits currently revealed
+let findHome = null;  // view to return to on Esc, captured when the box opens
+let findDone = false; // Enter was pressed, so the jump was deliberate: Esc keeps it
+let findFlash = null; // id drawn with the brighter arrival ring
+// A block is findable by its name, its type (both the palette label and the
+// raw type), and its id, so "Bus 14", "xfmr", "transformer 3ph" and "#14" all
+// lead somewhere. Substring, case insensitive: on a real network you remember
+// a fragment of a name, not its exact spelling.
+function findText(b) {
+  const d = DEFS[b.type];
+  return [(b.params && b.params.name) || '', d ? d.label : '', b.type, '#' + b.id].join(' ').toLowerCase();
+}
+// Rank by how well the NAME matches, so typing "Bus 1" puts Bus 1 above Bus 14
+// and both above a block that only matched on its type.
+function findScore(b, q) {
+  const nm = String((b.params && b.params.name) || '').toLowerCase();
+  return nm === q ? 0 : nm.startsWith(q) ? 1 : nm.includes(q) ? 2 : 3;
+}
+function findRefresh() {
+  const el = document.getElementById('findq');
+  const q = el ? el.value.trim().toLowerCase() : '';
+  findHits = !q ? [] : S.blocks
+    .filter(b => findText(b).includes(q))
+    .sort((a, b) => findScore(a, q) - findScore(b, q) || a.id - b.id)
+    .map(b => b.id);
+  if (findAt >= findHits.length) findAt = findHits.length ? 0 : -1;
+  renderFindList();
+}
+function findRowLabel(b) {
+  const d = DEFS[b.type];
+  const nm = (b.params && b.params.name) || '';
+  const type = d ? d.label : b.type;
+  return escAttr(nm || type) + ' <span class="fdim">' + (nm ? escAttr(type) + ' ' : '') + '#' + b.id + '</span>';
+}
+function renderFindList() {
+  const list = document.getElementById('findlist'), cnt = document.getElementById('findcount');
+  const el = document.getElementById('findq');
+  const q = el ? el.value.trim() : '';
+  if (cnt) cnt.textContent = !q ? '' : findHits.length ? (Math.max(findAt, 0) + 1) + '/' + findHits.length : 'none';
+  if (!list) return;
+  if (!q || !findHits.length) { list.style.display = 'none'; list.innerHTML = ''; return; }
+  list.innerHTML = findHits.slice(0, FIND_MAX).map((id, i) => {
+    const b = S.blocks.find(x => x.id === id);
+    return b ? '<button type="button" class="' + (i === findAt ? 'on' : '') + '" onclick="findGo(' + i + ',true)">'
+      + findRowLabel(b) + '</button>' : '';
+  }).join('') + (findHits.length > FIND_MAX
+    ? '<div class="fdim" style="padding:4px 6px;font-size:11px">+ ' + (findHits.length - FIND_MAX) + ' more, keep typing</div>' : '');
+  list.style.display = 'block';
+}
+// Move the camera to a block. Zooms IN when the view is wider than FIND_W and
+// never out: someone who framed a region deliberately keeps their scale, and a
+// reveal that zoomed out would throw that away to show something already
+// visible.
+function revealBlock(id, select) {
+  const b = S.blocks.find(x => x.id === id);
+  if (!b) return;
+  const d = getDims(b);
+  if (view.w > FIND_W) {
+    view.w = Math.max(ZMIN, Math.min(maxViewW(), FIND_W));
+    view.h = view.w * viewAspect();
+  }
+  view.x = b.x + d.w / 2 - view.w / 2;
+  view.y = b.y + d.h / 2 - view.h / 2;
+  findFlash = id;
+  // Browsing must not disturb the circuit: only a COMMITTED match (Enter, or a
+  // click in the list) selects the block and opens its parameter rail, so a
+  // search abandoned with Esc leaves the selection exactly as it was.
+  if (select) { S.sel = [id]; selWire = null; }
+  render();
+  if (select) showProps();
+  clearTimeout(revealBlock._t);
+  revealBlock._t = setTimeout(() => { findFlash = null; render(); }, 1100);
+}
+function findGo(i, commit) {
+  if (!findHits.length) return;
+  findAt = ((i % findHits.length) + findHits.length) % findHits.length; // wraps both ways
+  if (commit) findDone = true;
+  revealBlock(findHits[findAt], !!commit);
+  renderFindList();
+}
+function focusFind() {
+  const el = document.getElementById('findq');
+  if (!el) return;
+  if (!el.value) { findHome = { ...view }; findDone = false; } // where Esc returns to
+  el.focus(); el.select();
+}
+function findReset() {
+  const el = document.getElementById('findq');
+  if (el) el.value = '';
+  findHits = []; findAt = -1; findHome = null; findDone = false; findFlash = null;
+  renderFindList();
+}
+function findEscape() {
+  const el = document.getElementById('findq');
+  const home = findDone ? null : findHome; // a committed jump was asked for: keep it
+  findReset();
+  if (home) Object.assign(view, home);
+  render();
+  if (el) el.blur();
+}
+function findType() {
+  findRefresh();
+  // Live reveal as you type, the behaviour Ctrl+F trains everyone to expect.
+  if (findHits.length) findGo(0, false); else { findAt = -1; renderFindList(); }
+}
+function findKey(e) {
+  if (e.key === 'Escape') { e.preventDefault(); findEscape(); return; }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    // First Enter commits the row you are on; each Enter after that steps to
+    // the next match, which is what "find again" means everywhere else.
+    if (findHits.length) findGo(findDone ? findAt + 1 : Math.max(findAt, 0), true);
+    return;
+  }
+  if (e.key === 'ArrowDown') { e.preventDefault(); findGo(findAt + 1, false); return; }
+  if (e.key === 'ArrowUp') { e.preventDefault(); findGo(findAt - 1, false); }
 }
 function toggleFullscreen() {
   const wrap = document.querySelector('.cnvwrap');
@@ -3498,7 +3642,7 @@ function pruneBlockSignals(id) {
   S.plots.forEach(pl => { if (!pl.auto) pl.sigs = pl.sigs.filter(s => s.key.split(':')[1] !== String(id)); });
 }
 function clearAll() {
-  pushHistory(); touchModel(); resetRunState(); // an empty canvas has no results to show
+  pushHistory(); touchModel(); resetRunState(); findReset(); // an empty canvas has no results and nothing to find
   S.blocks = []; S.wires = []; S.sel = []; S.wireFrom = null; selWire = null;
   S.vconv = 'll'; // a fresh blank circuit defaults to line-to-line entry (SPEC §2); loaded files keep their own convention
   S.plots.forEach(pl => { if (!pl.auto) pl.sigs = []; });
@@ -3656,6 +3800,7 @@ function applyCircuit(d, name) {
   });
   pushHistory(); // an accidental Load/Import shouldn't be unrecoverable
   touchModel(); resetRunState(); // the previous circuit's results are not this circuit's
+  findReset();                   // a query aimed at the circuit being replaced
   S.blocks = d.blocks; S.wires = d.wires;
   S.sel = []; S.wireFrom = null; selWire = null;
   S.vconv = d.vconv === 'll' ? 'll' : 'ph'; // absent => 'ph' (legacy files stay phase)
@@ -3765,7 +3910,11 @@ function touchModel() {
   // change, to keep it next to pushHistory) and a multi-step edit repaints once.
   if (!stalePaint) {
     stalePaint = true;
-    requestAnimationFrame(() => { stalePaint = false; drawAllPlots(); });
+    requestAnimationFrame(() => {
+      stalePaint = false;
+      drawAllPlots();
+      findRefresh(); // the hit set and its count follow blocks appearing/disappearing
+    });
   }
 }
 function resultsStale() { return !!live && live.rev !== modelRev; }

@@ -111,6 +111,21 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
 .emt .hint{font-size:11px;color:var(--tx3);margin-top:4px}
 .emt .statusline{font-size:12px;color:var(--tx3)}
 .emt .statusrow{display:flex;gap:10px;align-items:baseline;margin-bottom:6px}
+/* Find box: sits in the status row rather than floating over the canvas,
+   because the params and science rails already occupy both canvas edges
+   (top:8px to bottom:8px) and a floating find bar would collide with them.
+   Always visible, so the feature is discoverable without knowing the key. */
+.emt .findbox{position:relative;display:flex;align-items:center;gap:6px;flex:none}
+.emt .findbox input{width:172px;height:24px;font-size:12px;padding:0 7px;border:1px solid var(--bd);
+  border-radius:6px;background:var(--sfc);color:var(--tx)}
+.emt .findbox input:focus{outline:none;border-color:var(--acc)}
+.emt .findcount{font-size:11px;color:var(--tx3);white-space:nowrap;min-width:40px}
+.emt .findlist{position:absolute;right:0;top:28px;z-index:30;width:262px;max-height:300px;overflow:auto;
+  background:var(--sfc);border:1px solid var(--bds);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.25);padding:4px}
+.emt .findlist button{display:block;width:100%;text-align:left;border:none;background:none;color:var(--tx);
+  font-size:12px;padding:4px 6px;border-radius:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.emt .findlist button:hover,.emt .findlist button.on{background:var(--sfc1)}
+.emt .findlist .fdim{color:var(--tx3)}
 .emt .projname{font-size:12px;font-weight:600;color:var(--tx2);white-space:nowrap;border:1px solid var(--bd);border-radius:6px;padding:1px 8px;background:var(--sfc)}
 .emt .layoutdialog{position:absolute;z-index:25;background:var(--sfc);border:1px solid var(--bds);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.3);padding:12px;min-width:200px}
 .emt .layoutdialog p{margin:0 0 10px;font-size:12px;color:var(--tx2)}
@@ -292,7 +307,14 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
 </div>
 <div class="statusrow">
   <span class="projname" id="projname" title="Loaded circuit — &bull; marks unsaved changes">Demo</span>
-  <div class="statusline" id="stat" style="flex:1">Demo: breaker energizes the feeder at t = 30 ms. Click blocks to edit, drag to move, click two terminals to wire. Click a wire to highlight what it connects (Delete removes it). Scroll or use +/&minus; to zoom, drag empty canvas to pan. Select a block and press R to rotate it 90&deg;.</div>
+  <div class="statusline" id="stat" style="flex:1">Demo: breaker energizes the feeder at t = 30 ms. Press / to find a block by name. Click blocks to edit, drag to move, click two terminals to wire. Click a wire to highlight what it connects (Delete removes it). Scroll or use +/&minus; to zoom, drag empty canvas to pan. Select a block and press R to rotate it 90&deg;.</div>
+  <div class="findbox" id="findbox">
+    <input id="findq" type="text" autocomplete="off" spellcheck="false" placeholder="Find block  &#47;"
+      title="Find a block by name, type or id. Press / from anywhere to jump here; Up/Down previews each match, Enter selects it and Enter again steps to the next, Esc leaves the search and returns to where you were."
+      oninput="findType()" onkeydown="findKey(event)">
+    <span class="findcount" id="findcount"></span>
+    <div class="findlist" id="findlist" style="display:none"></div>
+  </div>
 </div>
 
 <div class="main">

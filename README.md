@@ -130,6 +130,21 @@ line) always names the circuit you're looking at — `Demo` on startup, the
 file name after a Load, `Untitled` after Clear — and grows a `•` the moment
 you edit anything, clearing again when you Save (which also downloads under
 that name instead of a generic `circuit.json`).
+**Finding a block.** On a large model, hunting for one component by eye stops
+being practical: IEEE39 is 147 blocks spread wide enough that fitting it on
+screen makes the symbols unreadable. Press `/` (or click the **Find block**
+box next to the status line) and type a name, a block type, or an id: `Bus 14`,
+`xfmr`, `#201`. Matching is substring and case insensitive, every match is
+haloed on the canvas so you can see where they all are, and the counter reads
+`3/12`. `Up`/`Down` walks the matches with the camera following, `Enter`
+selects the one you are on and opens its parameter rail (`Enter` again steps to
+the next), and `Esc` leaves the search and puts the view back where it was
+unless you already committed to a match. Browsing never changes the circuit or
+the selection, so an abandoned search costs nothing. `Ctrl+F` is left alone
+deliberately: it belongs to the browser, and it cannot see into the canvas
+anyway, since the schematic is SVG drawn at world coordinates rather than page
+text.
+
 For nodes with more than two connections, drop a **Bus** block — a thick,
 nameable junction bar with one or more taps — instead of routing many wires
 to one point. Every bus is also a measurement point: its node voltage shows
