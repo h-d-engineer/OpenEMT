@@ -8,7 +8,42 @@ the same operations the UI exposes. One OpenEMT instance is held per
 connection as "the current circuit", so an agent refines a case across many
 tool calls the way a user does in the canvas.
 
+There are two ways to run it: **from npm**, which needs no clone and is what
+most users want, or **from a clone**, which is what you want if you are editing
+the solver. The npm route is below; everything from "Prerequisites" onward
+describes the clone route.
+
+## From npm (no clone)
+
+The package publishes a second binary, `openemt-mcp`, so any MCP client can
+spawn the server by name. There is nothing to install and no absolute path to
+get wrong:
+
+```json
+{
+  "mcpServers": {
+    "openemt": {
+      "command": "npx",
+      "args": ["-y", "openemt-mcp"]
+    }
+  }
+}
+```
+
+`-y` skips the "install this package?" prompt, which a client spawning a
+subprocess cannot answer. The first launch downloads the package and so takes a
+few seconds; later launches use the npm cache. Pin a version with
+`openemt-mcp@0.1.0` if you want a client's behaviour frozen. To avoid the
+download entirely, `npm install -g openemt` once and then use
+`"command": "openemt-mcp", "args": []`.
+
+This works in every client below. Use it unless you are developing OpenEMT
+itself, in which case the clone route runs your working tree instead of the
+published release.
+
 ## Prerequisites
+
+*(clone route only)*
 
 1. **Node.js >= 18** on PATH. Verify with `node --version`.
 2. **Install dependencies.** The repo tracks `package.json` and
@@ -27,7 +62,10 @@ process working directory. So you can point any client at the absolute path
 to `api/mcp-server.js` and it will run regardless of where the client spawns
 it.
 
-## Per-client setup
+## Per-client setup (clone route)
+
+Every client below can equally use the npm entry above; these snippets are for
+running a clone.
 
 ### Claude Code (project-scoped, zero config)
 

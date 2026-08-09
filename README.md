@@ -1,6 +1,7 @@
 # OpenEMT
 
 [![CI](https://github.com/h-d-engineer/OpenEMT/actions/workflows/ci.yml/badge.svg)](https://github.com/h-d-engineer/OpenEMT/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/openemt.svg)](https://www.npmjs.com/package/openemt)
 [![Licence: AGPL v3](https://img.shields.io/badge/licence-AGPL--3.0--only-blue.svg)](LICENSE)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21857083.svg)](https://doi.org/10.5281/zenodo.21857083)
 
@@ -51,26 +52,36 @@ or download `index.html` and double-click it: no install, no server, works
 offline, and it is the same file either way. Press **Load** and open anything
 in [`examples/`](examples/README.md).
 
-**Agents and scripts.** Node 18+, then:
+**Agents and scripts.** Node 18+, nothing to clone:
 
 ```bash
-npm install                                          # the API layer's 2 deps
-node api/cli.js catalog                              # every block and its parameters
-node api/cli.js pf examples/ieee9bus.json            # steady-state power flow
-node api/cli.js run examples/central_ups.json --pf   # EMT study from that operating point
-node api/cli.js query examples/central_ups.json --block 15 --signal Vrms --pf --tail
+npx openemt examples                       # the shipped example circuits
+npx openemt catalog                        # every block type and its parameters
+npx openemt pf ieee9bus                    # steady-state power flow
+npx openemt run central_ups --pf           # EMT study from that operating point
+npx openemt query central_ups --block 15 --signal Vrms --pf --tail
 ```
 
 That last line answers the question the `central_ups` example exists to ask: the
 utility trips at 150 ms and the 480 V switchgear bus (block 4) collapses to
 zero, while the UPS output (block 15) still reads 277 V at the end of the run.
 
-Only the API layer has dependencies; the browser build has none. Run settings
+`npx` fetches the package, runs it, and leaves nothing installed in your
+project; `npm install -g openemt` puts `openemt` on your PATH for repeated use.
+Every command takes either the name of a shipped example, as listed by
+`openemt examples`, or a path to a circuit `.json` of your own. Run settings
 (duration, time step, phase mode) travel inside the circuit file, so a shipped
 example runs its intended study without being told how long to run.
-`node api/cli.js --help` lists every command, and
-[`docs/MCP.md`](docs/MCP.md) has the per-client MCP setup: in Claude Code it is
-zero-config, because the repo ships a `.mcp.json` at the root.
+`npx openemt --help` lists every command.
+
+**From a clone** instead, to contribute or to run the test suites:
+
+```bash
+npm install                                          # the API layer's 2 deps
+node api/cli.js run examples/central_ups.json --pf
+```
+
+Only the API layer has dependencies; the browser build has none.
 
 ## Using the canvas
 
@@ -251,9 +262,19 @@ the one the solver actually implements, and every result is addressed by
 without invalidating the query it wrote earlier. The solver is deterministic,
 so a run is reproducible from the circuit file alone.
 
-In Claude Code it is zero-config: the repo ships a `.mcp.json` at the root and
-you approve the one-time prompt on first use. For Claude Desktop and other
-clients you add a small absolute-path entry to that client's MCP config.
+Any MCP client can run the server straight from npm, with no clone and no
+absolute paths to get wrong:
+
+```json
+{
+  "mcpServers": {
+    "openemt": { "command": "npx", "args": ["-y", "openemt-mcp"] }
+  }
+}
+```
+
+Working from a clone, Claude Code is zero-config instead: the repo ships a
+`.mcp.json` at the root and you approve the one-time prompt on first use.
 Prerequisites, exact snippets per client, and troubleshooting are in
 [`docs/MCP.md`](docs/MCP.md).
 
