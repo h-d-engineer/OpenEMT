@@ -1,7 +1,7 @@
 # OpenEMT
 
 [![CI](https://github.com/h-d-engineer/OpenEMT/actions/workflows/ci.yml/badge.svg)](https://github.com/h-d-engineer/OpenEMT/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/openemt.svg)](https://www.npmjs.com/package/openemt)
+[![npm](https://img.shields.io/npm/v/%40openemt%2Fopenemt.svg)](https://www.npmjs.com/package/@openemt/openemt)
 [![Licence: AGPL v3](https://img.shields.io/badge/licence-AGPL--3.0--only-blue.svg)](LICENSE)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21857083.svg)](https://doi.org/10.5281/zenodo.21857083)
 
@@ -52,27 +52,34 @@ or download `index.html` and double-click it: no install, no server, works
 offline, and it is the same file either way. Press **Load** and open anything
 in [`examples/`](examples/README.md).
 
-**Agents and scripts.** Node 18+, nothing to clone:
+**Agents and scripts.** Node 18+, nothing to clone. One command, start to
+finish:
 
 ```bash
-npx openemt examples                       # the shipped example circuits
-npx openemt catalog                        # every block type and its parameters
-npx openemt pf ieee9bus                    # steady-state power flow
-npx openemt run central_ups --pf           # EMT study from that operating point
-npx openemt query central_ups --block 15 --signal Vrms --pf --tail
+npx @openemt/openemt query central_ups --block 15 --signal Vrms --pf --tail
 ```
 
-That last line answers the question the `central_ups` example exists to ask: the
-utility trips at 150 ms and the 480 V switchgear bus (block 4) collapses to
-zero, while the UPS output (block 15) still reads 277 V at the end of the run.
+That answers the question the `central_ups` example exists to ask: the utility
+trips at 150 ms and the 480 V switchgear bus (block 4) collapses to zero, while
+the UPS output (block 15) still reads 277 V at the end of the run.
 
-`npx` fetches the package, runs it, and leaves nothing installed in your
-project; `npm install -g openemt` puts `openemt` on your PATH for repeated use.
+For more than a one-off, install once and drop the prefix. The package is
+`@openemt/openemt`; the command it installs is `openemt`:
+
+```bash
+npm install -g @openemt/openemt
+
+openemt examples                      # the shipped example circuits
+openemt catalog                       # every block type and its parameters
+openemt pf ieee9bus                   # steady-state power flow
+openemt run central_ups --pf          # EMT study from that operating point
+openemt --help                        # every command
+```
+
 Every command takes either the name of a shipped example, as listed by
 `openemt examples`, or a path to a circuit `.json` of your own. Run settings
 (duration, time step, phase mode) travel inside the circuit file, so a shipped
 example runs its intended study without being told how long to run.
-`npx openemt --help` lists every command.
 
 **From a clone** instead, to contribute or to run the test suites:
 
@@ -268,7 +275,10 @@ absolute paths to get wrong:
 ```json
 {
   "mcpServers": {
-    "openemt": { "command": "npx", "args": ["-y", "openemt-mcp"] }
+    "openemt": {
+      "command": "npx",
+      "args": ["-y", "--package", "@openemt/openemt", "openemt-mcp"]
+    }
   }
 }
 ```

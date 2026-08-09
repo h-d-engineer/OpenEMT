@@ -24,17 +24,23 @@ get wrong:
   "mcpServers": {
     "openemt": {
       "command": "npx",
-      "args": ["-y", "openemt-mcp"]
+      "args": ["-y", "--package", "@openemt/openemt", "openemt-mcp"]
     }
   }
 }
 ```
 
-`-y` skips the "install this package?" prompt, which a client spawning a
-subprocess cannot answer. The first launch downloads the package and so takes a
-few seconds; later launches use the npm cache. Pin a version with
-`openemt-mcp@0.1.0` if you want a client's behaviour frozen. To avoid the
-download entirely, `npm install -g openemt` once and then use
+Both flags are load-bearing. `-y` skips the "install this package?" prompt,
+which a client spawning a subprocess cannot answer. `--package` is required
+because the package ships **two** binaries, `openemt` and `openemt-mcp`: with
+more than one, npx runs only the bin whose name matches the package, so a plain
+`npx -y @openemt/openemt` starts the CLI, and naming a bin without `--package`
+fails with "could not determine executable to run".
+
+The first launch downloads the package and takes a few seconds; later launches
+use the npm cache. Pin a version with `@openemt/openemt@0.1.1` if you want a
+client's behaviour frozen. To avoid the download entirely,
+`npm install -g @openemt/openemt` once and then use
 `"command": "openemt-mcp", "args": []`.
 
 This works in every client below. Use it unless you are developing OpenEMT

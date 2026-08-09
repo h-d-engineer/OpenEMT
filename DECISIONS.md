@@ -3415,3 +3415,34 @@ fail. The break also showed the new block aborting the whole file on a nonzero
 CLI exit, which would have hidden every later test including the MCP suite, so
 the child-process calls now route through a tolerant runner that turns an exit
 code into a FAIL on the check that cares.
+
+## 2026-08-09 - the npm package is scoped: @openemt/openemt
+
+npm refused the unscoped name with a 403: "Package name too similar to existing
+package opener". That is a server-side typosquatting heuristic, not an account
+problem, and it is not appealable from the CLI. The filter normalises
+punctuation before comparing, so `open-emt` is the same string as `openemt` to
+it and would be refused too.
+
+Scoped names are exempt from the check, so the package ships as
+`@openemt/openemt` under a free npm organisation matching the GitHub org, in
+preference to npm's own suggestion of `@h-d-engineer/openemt`: an install
+command and an MCP config are long-lived public surface, and neither should be
+welded to a personal handle we have already moved away from.
+
+The scope is not free choice, though. The package ships TWO binaries, and npx
+only auto-resolves a bin when its name matches the package's last path segment;
+with several bins and no match it dies with "could not determine executable to
+run". Verified both ways against packed tarballs: `npx @openemt/openemt` runs
+the CLI, `npx openemt-cli` fails outright. So the last segment has to stay
+`openemt`, and only the scope was ever actually up for decision. The MCP entry
+consequently needs the longer
+`npx -y --package @openemt/openemt openemt-mcp`, confirmed with a real stdio
+handshake (14 tools, load_example) rather than assumed.
+
+`publishConfig.access: public` is mandatory here: scoped packages default to
+restricted, which a free account cannot publish.
+
+A name-release request for the unscoped `openemt` goes to npm support in
+parallel. If granted it becomes the primary name and the scoped one stays as an
+alias; if refused, nothing changes.
