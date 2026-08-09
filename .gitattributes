@@ -1,0 +1,8 @@
+# Store text as LF in the repository and check it out as LF, so build.py and
+# smoke_test.js behave identically on Windows, macOS, and Linux and diffs stay
+# free of line-ending churn.
+* text=auto eol=lf
+
+*.png binary
+*.pdf binary
+*.zip binary

@@ -1,0 +1,23 @@
+{
+  "name": "openemt",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OpenEMT: EMTP-style transient + power-flow solver. Headless API surface (MCP server + CLI) wrapping the pure solver core in src/. The browser app is assembled by build.py; this package exposes the same numeric core to agents and scripts without touching the browser build.",
+  "license": "AGPL-3.0-only",
+  "main": "api/core.js",
+  "bin": {
+    "openemt": "api/cli.js"
+  },
+  "scripts": {
+    "test": "node smoke_test.js && node api/test_api.js",
+    "smoke": "node smoke_test.js",
+    "apitest": "node api/test_api.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "commander": "^12.1.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

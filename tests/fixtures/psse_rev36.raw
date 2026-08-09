@@ -1,0 +1,26 @@
+@!IC,SBASE,REV,XFRRAT,NXFRAT,BASFRQ
+0,   100.00, 36, 0, 1, 60.00     / hand-written OpenEMT import regression case (not a vendor file)
+OPENEMT REV-36 FIELD-LAYOUT TEST
+GENERATOR RECORD CARRIES NREG, SO MBASE/ZR/ZX/STAT ALL SIT ONE FIELD LATER
+0 / END OF SYSTEM-WIDE DATA, BEGIN BUS DATA
+@!   I,'NAME        ', BASKV, IDE,AREA,ZONE,OWNER, VM,        VA,    NVHI,   NVLO,   EVHI,   EVLO
+     1,'R36-SLACK   ', 230.0000,3,   1,   1,   1,1.02000,   0.0000,1.10000,0.90000,1.10000,0.90000
+     2,'R36-LOAD    ', 230.0000,1,   1,   1,   1,1.00000,  -3.0000,1.10000,0.90000,1.10000,0.90000
+0 / END OF BUS DATA, BEGIN LOAD DATA
+@!   I,'ID',STAT,AREA,ZONE,      PL,        QL,        IP,        IQ,        YP,        YQ, OWNER,SCALE,INTRPT
+     2,'1 ',   1,   1,   1,    60.000,    20.000,     0.000,     0.000,     0.000,     0.000,   1,    1,  0
+0 / END OF LOAD DATA, BEGIN FIXED SHUNT DATA
+0 / END OF FIXED SHUNT DATA, BEGIN GENERATOR DATA
+@!   I,'ID',      PG,        QG,        QT,        QB,     VS,    IREG,NREG,     MBASE,     ZR,         ZX,         RT,         XT,     GTAP,STAT, RMPCT,      PT,        PB
+     1,'1 ',    50.000,    10.000,   150.000,  -100.000,1.02000,     0,   0,   250.000, 4.00000E-3, 2.00000E-1, 0.00000E+0, 0.00000E+0,1.00000,1, 100.0,   300.000,     0.000
+     1,'2 ',    77.000,    11.000,   150.000,  -100.000,1.02000,     0,   0,   777.000, 7.70000E-2, 7.70000E-1, 0.00000E+0, 0.00000E+0,1.00000,0, 100.0,   777.000,     0.000
+0 / END OF GENERATOR DATA, BEGIN BRANCH DATA
+@!   I,     J,'CKT',      R,           X,       B,                   'N A M E'                 ,  RATE1,  RATE2,  RATE3,  RATE4,  RATE5,  RATE6,  RATE7,  RATE8,  RATE9, RATE10, RATE11, RATE12,      GI,      BI,      GJ,      BJ,STAT,MET,   LEN,  O1,    F1
+     1,     2,'1 ', 1.00000E-2, 1.00000E-1, 2.00000E-2,'                                        ',  400.00,    0.00,    0.00,    0.00,    0.00,    0.00,    0.00,    0.00,    0.00,    0.00,    0.00,    0.00,  0.00000,  0.00000,  0.00000,  0.00000,1,1,   0.00,   1,1.0000
+     1,     2,'2 ', 9.90000E-1, 9.90000E-1, 0.00000E+0,'                                        ',  100.00,    0.00,    0.00,    0.00,    0.00,    0.00,    0.00,    0.00,    0.00,    0.00,    0.00,    0.00,  0.00000,  0.00000,  0.00000,  0.00000,0,1,   0.00,   1,1.0000
+0 / END OF BRANCH DATA, BEGIN TRANSFORMER DATA
+0 / END OF TRANSFORMER DATA, BEGIN AREA DATA
+0 / END OF AREA DATA, BEGIN ZONE DATA
+0 / END OF ZONE DATA, BEGIN OWNER DATA
+0 / END OF OWNER DATA, BEGIN Q RECORD
+Q

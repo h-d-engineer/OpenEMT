@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+message: "If you use OpenEMT in academic work, please cite it as below."
+title: "OpenEMT: an agent-native electromagnetic transient simulator for electric power systems"
+abstract: >-
+  OpenEMT is an electromagnetic transient (EMT) and power-flow simulator for
+  AC, DC and hybrid AC/DC power systems. One pure, deterministic solver core
+  is addressable through three coequal frontends: a drag-and-drop schematic
+  canvas that runs entirely in a web browser from a single self-contained file
+  with no installation, a command-line interface for scripts and continuous
+  integration, and a Model Context Protocol server whose tool schemas are
+  generated from the block catalogue, so that a software agent can enumerate
+  the available physics, build a circuit, solve it, and query results by
+  stable block identifier. Circuits are stored as plain-text JSON. Block
+  models are averaged and simplified for concept validation rather than
+  certified engineering analysis; each is checked against an analytical or
+  independent-solver reference, and the known limitations are published
+  alongside the code.
+type: software
+authors:
+  - family-names: Nasiri
+    given-names: Hiva
+    email: hiva@openemt.pro
+version: 0.1.0
+date-released: 2026-08-08
+license: AGPL-3.0-only
+repository-code: "https://github.com/h-d-engineer/OpenEMT"
+keywords:
+  - electromagnetic transients
+  - EMT simulation
+  - power systems
+  - power flow
+  - AI agents
+  - Model Context Protocol
+  - electrical engineering
+  - open source

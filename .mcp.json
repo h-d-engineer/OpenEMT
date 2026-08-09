@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "openemt": {
+      "command": "node",
+      "args": ["api/mcp-server.js"]
+    }
+  }
+}

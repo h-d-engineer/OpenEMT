@@ -1,0 +1,26 @@
+# Local-only material, never commit: git history is permanent and survives in
+# every clone and fork, so anything committed here could not be taken back.
+legal/
+
+# Study outputs and business report material. Kept local: generated artifacts
+# plus material that is not part of the public project.
+reports/
+
+# Exploratory / in-development simulation cases. Scratch space, local only:
+# promote a case to examples/ (README row + smoke-test coverage) when it
+# demonstrates something new; distill bug-finders into tests/fixtures/.
+studies/
+
+# Per-machine Claude Code permissions (launch.json is shared, this is not).
+.claude/settings.local.json
+
+# Node: API layer (api/) deps. package.json + package-lock.json ARE tracked
+# (lockfile pins reproducible installs); node_modules is not.
+node_modules/
+
+# OS / editor noise
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.swp
+*~
