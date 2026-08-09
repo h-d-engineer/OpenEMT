@@ -3297,3 +3297,23 @@ setting, no physics touched) and the README numbers corrected to the settled
 values; the documented 15.16 vs 15.13 A pair turned out to be a mid-swing
 measurement. The unbalance is genuine but is a ~0.03% effect, so the smoke test
 prints it and gates on the setpoint convergence instead.
+
+## 2026-08-09 — Run results are stamped with the circuit they describe (issue #1)
+A run's sample buffers carried nothing identifying which circuit produced them,
+and `applyCircuit()` replaced blocks, wires and plots without touching them.
+Loading a new case therefore kept the previous case's traces, its flow arrows
+and its time window, and because signals are keyed by block id the old labels
+could reappear attached to unrelated blocks: loading `ieee39bus` after
+`central_ups` left "Probe #14" and "Probe #15" in the registry, where those ids
+are buses and the model has no probe at all. Fixed in two layers rather than
+one, because load is only the loudest case of a general problem. `modelRev`
+counts changes to the ELECTRICAL model and every run stamps the revision it ran
+against into `live.rev`, so an ordinary edit (delete a block, retune a line)
+now marks the plots stale instead of presenting them as current. Geometry is
+deliberately excluded: moving or rotating a block changes no physics, and
+invalidating on every drag would be noise. A replaced circuit clears the run
+state outright, since those results answer a different question rather than
+being a stale answer to this one. Blanked plots then say "No results yet" and
+stale ones say "Circuit changed since this run", because silently empty plots
+read as a fault in the tool. Flow arrows are cleared by the same signal: they
+are keyed by wire INDEX, so any structural edit silently re-points them.

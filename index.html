@@ -7611,6 +7611,7 @@ function setProj(name, dirty) {
   if (el) el.textContent = projName + (dirty ? ' •' : '');
 }
 function restoreSnapshot(snap) {
+  touchModel(); // undo/redo can restore any topology or parameter change
   S.blocks = snap.blocks; S.wires = snap.wires; S.plots = snap.plots;
   yZoom = {}; // plot objects are replaced wholesale — a range kept by id would land on a different plot
   S.vconv = (snap.vconv === 'll') ? 'll' : 'ph'; // absent (old snapshots) => 'ph'
@@ -7700,7 +7701,7 @@ function addBlock(type, x, y) {
   // default to its LL equivalent (e.g. src 277 ph -> 480 LL), not a phase
   // number that would then be read as LL.
   if (S.vconv === 'll') scaleVconvParams(b, SQRT3);
-  pushHistory(); S.blocks.push(b);
+  pushHistory(); touchModel(); S.blocks.push(b);
   // Select it. At a zoomed-out view the centre of the screen is still a lot of
   // pixels, so highlighting the new block (and opening its params rail) is what
   // actually answers "where did it go?".
@@ -8468,7 +8469,7 @@ function selectWire(i) {
 }
 function delSelectedWire() {
   if (selWire == null || !S.wires[selWire]) return;
-  pushHistory();
+  pushHistory(); touchModel();
   S.wires.splice(selWire, 1);
   selWire = null;
   render(); showProps();
@@ -8486,7 +8487,7 @@ cnv.addEventListener('pointerdown', e => {
     const parts = t.dataset.term.split(',').map(Number);
     if (!S.wireFrom) S.wireFrom = parts;
     else {
-      if (!(S.wireFrom[0] === parts[0] && S.wireFrom[1] === parts[1])) { pushHistory(); S.wires.push({ a: S.wireFrom, b: parts }); }
+      if (!(S.wireFrom[0] === parts[0] && S.wireFrom[1] === parts[1])) { pushHistory(); touchModel(); S.wires.push({ a: S.wireFrom, b: parts }); }
       S.wireFrom = null;
     }
     render(); return;
@@ -10453,13 +10454,13 @@ function scaleSvg(N) {
     '</svg>';
 }
 function setParam(id, key, val) {
-  pushHistory();
+  pushHistory(); touchModel();
   S.blocks.find(x => x.id === id).params[key] = val;
   render();
 }
 function delSelected() {
   if (!S.sel.length) { delSelectedWire(); return; } // Delete with only a wire selected removes the wire
-  pushHistory();
+  pushHistory(); touchModel();
   const ids = S.sel;
   S.wires = S.wires.filter(w => !ids.includes(w.a[0]) && !ids.includes(w.b[0]));
   S.blocks = S.blocks.filter(b => !ids.includes(b.id));
@@ -11069,7 +11070,7 @@ function pruneBlockSignals(id) {
   S.plots.forEach(pl => { if (!pl.auto) pl.sigs = pl.sigs.filter(s => s.key.split(':')[1] !== String(id)); });
 }
 function clearAll() {
-  pushHistory();
+  pushHistory(); touchModel(); resetRunState(); // an empty canvas has no results to show
   S.blocks = []; S.wires = []; S.sel = []; S.wireFrom = null; selWire = null;
   S.vconv = 'll'; // a fresh blank circuit defaults to line-to-line entry (SPEC §2); loaded files keep their own convention
   S.plots.forEach(pl => { if (!pl.auto) pl.sigs = []; });
@@ -11226,6 +11227,7 @@ function applyCircuit(d, name) {
     if (typeof b.rot !== 'number') b.rot = 0;
   });
   pushHistory(); // an accidental Load/Import shouldn't be unrecoverable
+  touchModel(); resetRunState(); // the previous circuit's results are not this circuit's
   S.blocks = d.blocks; S.wires = d.wires;
   S.sel = []; S.wireFrom = null; selWire = null;
   S.vconv = d.vconv === 'll' ? 'll' : 'ph'; // absent => 'ph' (legacy files stay phase)
@@ -11239,10 +11241,25 @@ function applyCircuit(d, name) {
     : null;
   yZoom = {}; // view state of the plots being replaced
   initPlots();
+  // A saved plot can name signals on blocks this circuit does not contain (its
+  // plot list was configured against an earlier version of the model, or was
+  // carried over by hand). Such a key resolves to nothing, so the plot looks
+  // configured but stays permanently blank with nothing saying why. Drop them
+  // at load and report the count, keyed by block id exactly like
+  // pruneBlockSignals. Auto plots expand from the live registry and have no
+  // stored keys to prune.
+  const haveIds = new Set(S.blocks.map(b => b.id));
+  let dropped = 0;
+  S.plots.forEach(pl => {
+    if (pl.auto) return;
+    const kept = pl.sigs.filter(s => haveIds.has(+String(s.key).split(':')[1]));
+    dropped += pl.sigs.length - kept.length;
+    pl.sigs = kept;
+  });
   nextPlotId = S.plots.reduce((m, p) => Math.max(m, p.id), 0) + 1;
   setProj(name, false);
   syncVconvUI(); render(); showProps(); renderPlots();
-  return { ok: true };
+  return { ok: true, dropped };
 }
 
 function loadCircuit(file) {
@@ -11255,7 +11272,8 @@ function loadCircuit(file) {
     if (res.err) { stat.textContent = 'Load failed: ' + res.err; return; }
     stat.textContent = 'Loaded ' + file.name + ': ' + S.blocks.length + ' blocks, ' + S.wires.length + ' wires.'
       + (d.sim ? ' Run settings from file: ' + document.getElementById('duration').value + ' ms at '
-        + document.getElementById('dtus').value + ' µs.' : '');
+        + document.getElementById('dtus').value + ' µs.' : '')
+      + (res.dropped ? ' ' + res.dropped + ' saved plot signal(s) dropped: no such block in this circuit.' : '');
   };
   rd.readAsText(file);
 }
@@ -11295,6 +11313,52 @@ const PH_LBL = ['A', 'B', 'C'];
 let live = null;        // { nph, probeIds, curSigs, t, vp, ic, bv } — accumulated buffers
 let sigIndex = {};      // signal key -> descriptor (with .get() → buffer series)
 let nextPlotId = 1;
+// ---- results vs circuit (issue #1) ----
+// A run's samples are an answer about ONE circuit, and nothing about them says
+// which. `modelRev` counts changes to the ELECTRICAL model — blocks, wires,
+// params, and wholesale replacements (load/import/undo). Geometry deliberately
+// does NOT count: moving or rotating a block changes no physics, and marking
+// the plots stale on every drag would be noise nobody reads. Each run stamps
+// the revision it ran against into live.rev, so anything drawn while the two
+// differ can be labelled as belonging to an older circuit instead of being
+// passed off as current.
+let modelRev = 0;
+let stalePaint = false;
+function touchModel() {
+  modelRev++;
+  // Flow arrows belong to the run that produced them and are keyed by wire
+  // INDEX, not by id, so deleting a block or wire silently re-points them at
+  // whatever now occupies that index. Drop them here rather than leave them
+  // drawing a previous circuit's power flow over the current one.
+  wireFlow = {}; wireFlowQ = {};
+  // The staleness banner is painted by the plot renderer, but most edit paths
+  // only re-render the canvas. Defer one coalesced redraw to the next frame, so
+  // it lands after whatever mutation called this (touchModel runs BEFORE the
+  // change, to keep it next to pushHistory) and a multi-step edit repaints once.
+  if (!stalePaint) {
+    stalePaint = true;
+    requestAnimationFrame(() => { stalePaint = false; drawAllPlots(); });
+  }
+}
+function resultsStale() { return !!live && live.rev !== modelRev; }
+// Drop everything a run produced. For a circuit that is REPLACED rather than
+// edited (load, import, New), the previous results are not stale data worth
+// labelling — they answer a different question, and because signals are keyed
+// by block id they can reappear under an id the new circuit has reused for
+// something else. That is issue #1's original symptom: two "Probe #14" /
+// "Probe #15" series survived a load into IEEE39, where those ids are buses
+// and no probe block exists at all.
+function resetRunState() {
+  live = null;
+  sigIndex = {};
+  wireFlow = {}; wireFlowQ = {};
+  tZoom = null;  // a time window measured against another circuit's run
+  yZoom = {};
+  Object.keys(groupColor).forEach(k => delete groupColor[k]);
+  colorCursor = 0;
+  updateZoomInfo();
+  updatePlotStepInfo();
+}
 const groupColor = {}; let colorCursor = 0;
 // Colour is keyed by group+quantity (not just group) so e.g. a branch's raw
 // current and its derived power don't render in the same colour/dash and
@@ -11521,6 +11585,7 @@ function initPlots() {
 // Fresh empty buffers + signal registry from a run's meta descriptor.
 function ingestMeta(meta) {
   live = {
+    rev: modelRev, // the circuit these samples describe (see touchModel)
     nph: meta.nph,
     Tms: meta.Tms || 0, // the run's true eventual duration — see fullRange()
     freqHz: meta.freqHz || 60,
@@ -11840,9 +11905,25 @@ function renderPlots() {
   drawAllPlots();
 }
 function drawAllPlots() {
-  if (!live) return;
   const dark = matchMedia('(prefers-color-scheme: dark)').matches;
-  S.plots.forEach(pl => drawOnePlot(pl, dark));
+  S.plots.forEach(pl => (live ? drawOnePlot(pl, dark) : drawEmptyPlot(pl, dark)));
+}
+// No run data at all (fresh page, New, or a circuit just loaded). Blanking the
+// plots silently reads as a fault in the tool rather than as "there is nothing
+// to show yet", which is what it actually is, so the card says so.
+function drawEmptyPlot(pl, dark) {
+  const c = document.getElementById('pcv-' + pl.id);
+  const leg = document.getElementById('pleg-' + pl.id);
+  if (leg) leg.textContent = '';
+  if (!c || c.offsetWidth < 60) return;
+  const H = plotHeight(pl), W = c.offsetWidth;
+  c.width = W * 2; c.height = H * 2;
+  const ctx = c.getContext('2d'); ctx.scale(2, 2);
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#898781'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('No results yet. Press Run.', W / 2, H / 2 + 4);
+  ctx.textAlign = 'left';
+  c._geom = null; // no axes to invert a pointer gesture against
 }
 // Per-plot height in CSS px (pl.h, set by the card's grip; saved with the
 // circuit alongside title/signals). PLOT_H0 is the historical fixed height, so
@@ -11988,6 +12069,17 @@ function drawOnePlot(pl, dark) {
     ctx.stroke();
   });
   ctx.setLineDash([]);
+  // The circuit has been edited since these samples were produced, so they
+  // describe a model that no longer exists. Say so on the plot rather than
+  // clearing it: while tuning a parameter the previous trace is exactly what
+  // you want to see, it just must not be mistaken for the current answer.
+  if (resultsStale()) {
+    ctx.fillStyle = dark ? 'rgba(17,17,17,.62)' : 'rgba(255,255,255,.66)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#898781'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('Circuit changed since this run. Press Run to update.', W / 2, H / 2 + 4);
+    ctx.textAlign = 'left';
+  }
   // Geometry snapshot so pointer/wheel handlers can invert screen -> time and
   // screen -> value. yTop/yH mirror the yval() mapping above, and rl/rr are the
   // ranges actually drawn (auto-fit or zoomed), which is what a gesture must
