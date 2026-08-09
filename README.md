@@ -49,8 +49,20 @@ starts draining. Everything on screen came from one **Load** and one **Run**.*
 **Humans.** Try it right now at
 **[h-d-engineer.github.io/OpenEMT](https://h-d-engineer.github.io/OpenEMT/)**,
 or download `index.html` and double-click it: no install, no server, works
-offline, and it is the same file either way. Press **Load** and open anything
-in [`examples/`](examples/README.md).
+offline, and it is the same file either way. Every example is built into that
+one file, so pick one from the **Examples** menu with nothing to download, or
+open a link straight to a solved case:
+
+**[IEEE 39-bus](https://h-d-engineer.github.io/OpenEMT/?example=ieee39bus&pf=1&run=1)**
+&middot;
+**[IEEE 9-bus](https://h-d-engineer.github.io/OpenEMT/?example=ieee9bus&pf=1&run=1)**
+&middot;
+**[UPS on a utility trip](https://h-d-engineer.github.io/OpenEMT/?example=central_ups&pf=1&run=1)**
+&middot;
+[the rest](examples/README.md)
+
+Those links take `?example=<name>` with optional `&pf=1` and `&run=1`. The app
+makes no network requests of any kind, so all of it works from `file://` too.
 
 **Agents and scripts.** Node 18+, nothing to clone. One command, start to
 finish:

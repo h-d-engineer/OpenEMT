@@ -3851,6 +3851,65 @@ function loadCircuit(file) {
   rd.readAsText(file);
 }
 
+// ---- shipped examples (embedded by build.py as EXAMPLES) ----
+
+// Load one by name, the same commit path the Load button uses. The deep copy is
+// not optional: applyCircuit() backfills params into the blocks it is given and
+// then keeps the arrays as S.blocks/S.wires, so handing it the embedded object
+// would let the user's edits mutate the master copy and make the second load of
+// an example differ from the first.
+function loadExampleByName(name) {
+  const stat = document.getElementById('stat');
+  if (!name) return false;
+  const d = EXAMPLES[name];
+  if (!d) { stat.textContent = 'No such example: ' + name + '.'; return false; }
+  const res = applyCircuit(JSON.parse(JSON.stringify(d)), name + '.json');
+  if (res.err) { stat.textContent = 'Could not open ' + name + ': ' + res.err; return false; }
+  fitView();
+  render();
+  stat.textContent = 'Opened example ' + name + ': ' + S.blocks.length + ' blocks, '
+    + S.wires.length + ' wires.'
+    + (d.sim ? ' Run settings from file: ' + document.getElementById('duration').value + ' ms at '
+      + document.getElementById('dtus').value + ' µs.' : '')
+    + (res.dropped ? ' ' + res.dropped + ' saved plot signal(s) dropped.' : '');
+  return true;
+}
+
+function buildExamplesMenu() {
+  const sel = document.getElementById('examplesel');
+  if (!sel) return;
+  Object.keys(EXAMPLES).sort().forEach(n => {
+    const o = document.createElement('option');
+    o.value = n; o.textContent = n;
+    sel.appendChild(o);
+  });
+}
+
+// Startup: honour ?example=<name>[&pf=1][&run=1], else the built-in Demo.
+// The name is matched against the embedded keys and nothing else, so the
+// parameter can never reach a path, a URL, or the filesystem.
+function bootFromUrl() {
+  let p;
+  try { p = new URLSearchParams(location.search); } catch (e) { p = null; }
+  const want = p && p.get('example');
+  if (!want || !Object.prototype.hasOwnProperty.call(EXAMPLES, want)) {
+    if (want) {
+      loadDemo(false); // keep the message below readable
+      document.getElementById('stat').textContent =
+        'No such example: ' + want + '. Showing the Demo circuit instead. '
+        + 'Pick one from the Examples menu.';
+      return;
+    }
+    loadDemo();
+    return;
+  }
+  if (!loadExampleByName(want)) { loadDemo(); return; }
+  history = []; future = []; updateUndoButtons(); // arriving via a link is not a user edit
+  const on = (k) => { const v = p.get(k); return v !== null && v !== '0' && v !== 'false'; };
+  if (on('pf')) { try { solvePF(); } catch (e) { console.warn('[deeplink] pf:', e); } }
+  if (on('run')) setTimeout(runEMTLive, 400);
+}
+
 // Import an external case file (currently PSS/E RAW), convert it to an OpenEMT
 // circuit via importCase() (src/import.js), commit it through applyCircuit(),
 // then auto-arrange it (imported circuits carry only a rough grid layout) and
@@ -5142,7 +5201,10 @@ function stopSim() {
 }
 
 // ---- demo circuit ----
-function loadDemo() {
+// autorun=false is used when arriving from a bad ?example= link: the demo's
+// auto-run finishes ~400 ms later and overwrites the status line, so the
+// explanation of why the link did not work would vanish before it was read.
+function loadDemo(autorun = true) {
   const s1 = addBlock('src', 30, 120);
   const bk = addBlock('brk', 160, 126);
   const l1 = addBlock('line', 280, 126);
@@ -5160,7 +5222,7 @@ function loadDemo() {
   history = []; future = []; updateUndoButtons(); // bootstrap circuit, not a user action — start with a clean undo stack
   setProj('Demo', false);
   render();
-  setTimeout(runEMTLive, 400);
+  if (autorun) setTimeout(runEMTLive, 400);
 }
 initPlots();
 zoomMode = ['x', 'y', 'box'].includes(localStorage.getItem('emt_zoommode')) ? localStorage.getItem('emt_zoommode') : 'x';
@@ -5173,5 +5235,6 @@ buildLibrary(); // populate the left Library drawer once (DEFS is static)
 syncLibraryUI(); // apply persisted Library (left sidebar) preference before first layout
 syncParamsUI(); // apply persisted Params-rail visibility preference
 syncScienceUI(); // apply persisted Science-rail visibility preference
-loadDemo();
+buildExamplesMenu(); // populate the Examples picker from the embedded set
+bootFromUrl(); // ?example=<name> if present and known, else the Demo circuit
 onCanvasResize(); // sync the camera to the element's real aspect (VIEW0's 680:340 is only nominal)

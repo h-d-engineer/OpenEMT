@@ -32,11 +32,42 @@ self.onmessage = function (ev) {
 """
 worker_src = blocks_js + '\n' + solver_js + '\n' + worker_bootstrap
 
+# Shipped examples are embedded in the bundle rather than fetched, so the
+# Examples menu and ?example= deep links work from file:// and offline, not
+# only when served. Minified (no indentation) because the on-disk files are
+# saved with indent=1 purely for git-diff readability, which the browser has no
+# use for. Sorted so the build stays reproducible across filesystems.
+examples = {}
+for f in sorted((root / 'examples').glob('*.json')):
+    examples[f.stem] = json.loads(f.read_text(encoding='utf-8'))
+
+# pfInit/pfV are DERIVED state: a saved power-flow operating point. Committing
+# them makes an example ship one session's solve instead of a model, and the EMT
+# run STARTS from it, so results silently change. The rule already exists for
+# examples/ but was only ever enforced by memory; embedding them in the shipped
+# artifact is exactly where that failure would become invisible, so the build
+# refuses it.
+polluted = [
+    f'{name}: block {b.get("id")} ({b.get("type")}) has {k}'
+    for name, d in examples.items()
+    for b in d.get('blocks', [])
+    for k in ('pfInit', 'pfV')
+    if k in b
+]
+if polluted:
+    raise SystemExit(
+        'BUILD ABORTED: derived power-flow state found in examples/:\n  '
+        + '\n  '.join(polluted)
+        + '\nStrip pfInit/pfV before committing: they are one session\'s solve, not\n'
+          'part of the model, and the EMT run starts from them.')
+examples_json = json.dumps(examples, separators=(',', ':'), sort_keys=True)
+
 out = (shell
        .replace('/*__BLOCKS_JS__*/', blocks_js)
        .replace('/*__SOLVER_JS__*/', solver_js)
        .replace('/*__IMPORT_JS__*/', import_js)
        .replace('/*__UI_JS__*/', (src / 'ui.js').read_text(encoding='utf-8'))
+       .replace('/*__EXAMPLES_JSON__*/', examples_json)
        .replace('/*__WORKER_SRC__*/', json.dumps(worker_src)))
 # newline='\n' is deliberate: write_text() defaults to text mode, which on
 # Windows translates '\n' to '\r\n'. That made every build emit CRLF while the
@@ -67,4 +98,6 @@ for required in ('SPDX-License-Identifier: AGPL-3.0-only',
 
 with open(root / 'index.html', 'w', encoding='utf-8', newline='\n') as f:
     f.write(out)
-print(f'index.html written ({len(out):,} bytes, licence notice present)')
+FLOPPY = 1474560  # 1.44 MB, 3.5-inch HD. Yes, really: it still fits.
+print(f'index.html written ({len(out):,} bytes, licence notice present, '
+      f'{len(examples)} examples embedded, {100 * len(out) / FLOPPY:.0f}% of a floppy)')

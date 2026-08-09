@@ -259,6 +259,10 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
   </div>
   <div class="tcl"><span class="tcl-l">File</span>
     <button onclick="saveCircuit()">Save</button>
+    <select id="examplesel" onchange="loadExampleByName(this.value);this.selectedIndex=0"
+      title="Open a shipped example circuit. Nothing to download: they are built into this file.">
+      <option value="">Examples&#8230;</option>
+    </select>
     <button onclick="document.getElementById('loadfile').click()">Load</button>
     <input type="file" id="loadfile" accept=".json,application/json" style="display:none"
       onchange="if(this.files[0])loadCircuit(this.files[0]);this.value=''">
@@ -380,6 +384,10 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
 /*__SOLVER_JS__*/
 /*__IMPORT_JS__*/
 const WORKER_SRC = /*__WORKER_SRC__*/;
+// Every shipped example, embedded at build time by build.py. Embedded rather
+// than fetched so the Examples menu and ?example= links work from file:// and
+// with no network, which is the whole point of a single-file app.
+const EXAMPLES = /*__EXAMPLES_JSON__*/;
 /*__UI_JS__*/
 </script>
 </body>

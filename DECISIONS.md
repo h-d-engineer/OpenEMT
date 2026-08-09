@@ -3446,3 +3446,45 @@ restricted, which a free account cannot publish.
 A name-release request for the unscoped `openemt` goes to npm support in
 parallel. If granted it becomes the primary name and the scoped one stays as an
 alias; if refused, nothing changes.
+
+## 2026-08-09 - examples are embedded in the bundle, and ?example= deep links
+
+The browser app had exactly one way to get a circuit in: a FileReader on the
+Load button. That made the shipped examples effectively unreachable for the
+audience we most want to impress. On a phone you would have to download a
+`.json` and drive a file picker, so "open the IEEE 39-bus on your phone" was
+not actually true, and a launch link could only ever point at an empty canvas.
+
+build.py now embeds every `examples/*.json` into the bundle as `EXAMPLES`, and
+the app gains an Examples menu plus `?example=<name>[&pf=1][&run=1]`. Embedding
+rather than fetching was the deliberate choice: the app makes zero network
+requests (verified: no fetch, XMLHttpRequest, WebSocket, EventSource or dynamic
+import anywhere in the artifact), so the menu and the deep links work from
+`file://`, offline, and on an air-gapped machine, which is the entire premise of
+a single-file app. Cost is 76 kB minified, taking index.html to 1,210,567 bytes:
+still 82% of a 1.44 MB floppy.
+
+The parameter is matched against the embedded keys with hasOwnProperty and
+nothing else, so it can never become a path or a URL; `?example=../../etc/passwd`
+falls back to the Demo. A `?url=` variant was considered and rejected: it would
+let anyone produce a link that loads their content inside our UI for no real
+gain. Encoding a circuit into the URL was also rejected: ieee39bus is 46 kB, far
+past any practical URL limit.
+
+Two things the browser check caught that review would not have. `applyCircuit`
+backfills params into the object it is handed and then keeps the arrays as
+S.blocks/S.wires, so loading from the embedded master directly would let a
+user's edits mutate it and make the second load of an example differ from the
+first; each load now deep-copies. And the bad-link message was being erased
+~400 ms later by the Demo circuit's auto-run, so a user following a broken link
+saw no explanation; loadDemo() takes an autorun flag for that path.
+
+Example drift needs no new test: build.py now reads examples/, so editing one
+without rebuilding changes the build output and CI's existing byte-identical
+check fails. Verified by actually editing an example and diffing.
+
+Also added a build guard for the standing pfInit/pfV rule. That state is one
+session's power-flow solve rather than part of the model, and embedding it in
+the shipped artifact is precisely where it would stop being visible, so the
+build now refuses to produce index.html if any example carries it. Verified by
+planting pfInit/pfV in showcase.json and watching the build abort.

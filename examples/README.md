@@ -1,6 +1,23 @@
 # Examples
 
-Each file is a schematic you can load with the **Load** button in the toolbar.
+**Open any of these in the browser without downloading anything.** They are
+built into the app, so pick one from the **Examples** menu in the toolbar, or
+link straight to it:
+
+| Open in the app | |
+| --- | --- |
+| [central_ups](https://h-d-engineer.github.io/OpenEMT/?example=central_ups&pf=1&run=1) | [central_ups_sag](https://h-d-engineer.github.io/OpenEMT/?example=central_ups_sag&pf=1&run=1) |
+| [iec60909_hv_network](https://h-d-engineer.github.io/OpenEMT/?example=iec60909_hv_network&pf=1&run=1) | [ieee39bus](https://h-d-engineer.github.io/OpenEMT/?example=ieee39bus&pf=1&run=1) |
+| [ieee9bus](https://h-d-engineer.github.io/OpenEMT/?example=ieee9bus&pf=1&run=1) | [ieee_harmonics_14bus](https://h-d-engineer.github.io/OpenEMT/?example=ieee_harmonics_14bus&pf=1&run=1) |
+| [radial_feeder](https://h-d-engineer.github.io/OpenEMT/?example=radial_feeder&pf=1&run=1) | [showcase](https://h-d-engineer.github.io/OpenEMT/?example=showcase&pf=1&run=1) |
+| [single_phase_gfm_lateral](https://h-d-engineer.github.io/OpenEMT/?example=single_phase_gfm_lateral&pf=1&run=1) | [single_phase_lateral](https://h-d-engineer.github.io/OpenEMT/?example=single_phase_lateral&pf=1&run=1) |
+| [syncgen_droop](https://h-d-engineer.github.io/OpenEMT/?example=syncgen_droop&pf=1&run=1) | |
+
+The URL takes `?example=<name>`, plus optional `&pf=1` to solve the power flow
+first and `&run=1` to start the simulation on arrival. Drop both to land on the
+schematic without running anything.
+
+Each file is also a schematic you can load with the **Load** button in the toolbar.
 Every entry below lists which phase mode to run it in. `central_ups.json`,
 `central_ups_sag.json`, `showcase.json`, and `syncgen_droop.json` **require**
 3-ph mode — the GFM inverter's and synchronous generator's controllers both
