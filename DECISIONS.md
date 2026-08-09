@@ -3337,3 +3337,39 @@ someone who framed a region deliberately keeps their scale, and zooming out to
 show something already on screen would throw that away. The find box lives in
 the status row rather than floating over the canvas because the params and
 science rails already occupy both canvas edges top to bottom.
+
+## 2026-08-09 — Plot axes fit the data and carry SI prefixes (issues #5, #6)
+`axisRange` seeded the vertical range at zero and only widened it, so zero was
+on every axis by construction and the plot spent its whole height on the empty
+space below a large mean. A 60 Hz trace was drawn on a -4.8 to 64.8 axis, where
+the 60.00 to 60.05 Hz excursion that actually matters is about a third of a
+pixel and reads as a dead flat line; a battery SOC moving 70.0 to 70.5 percent
+on a 0 to 100 axis is the same failure. Seeding from the data instead is a
+narrower change than it sounds: an AC waveform straddles zero by itself, so
+voltage and current traces are pixel-identical, and what gains is exactly the
+class of signal whose information lives in a small excursion about a large
+value (measured on `central_ups`: frequency 9.7x more vertical resolution, SOC
+14.8x, AC voltage unchanged). Two guards keep it honest. A trace flat to within
+1e-9 relative is treated as constant and given a 0.1% window rather than having
+its own numerical dust magnified into apparent dynamics, and a trace flat at
+exactly zero keeps the old +/- 1 because it has no scale to work from. No
+opt-out toggle: one rule, applied everywhere.
+
+Tick labels now carry one SI prefix for the whole axis, chosen from the largest
+tick so the five labels stay directly comparable (400k / 300k / 200k, never
+400k / 300000 / 200000). The prefix rides the number rather than being promoted
+to an axis unit label, because a single axis can legitimately carry a V series
+and an A series at once and there is no one correct unit to print there; the
+legend already names each series' unit. A tick that rounds to zero drops both
+decimals and prefix, which also removes the "-0" an asymmetric axis used to
+print. Widest label on a 400 kV axis went from 9 characters to 5, and the left
+gutter is sized from that measurement, so the plot gets the width back.
+
+Filed alongside these and closed as invalid: a claim that the saved
+`f:<id>:<phase>` keys in `ieee39bus` and `ieee9bus` could never resolve. They
+resolve fine. `f:<id>:0` is the per-element AUX signal (a machine's own rotor
+frequency, unit `f Hz`), a different family from the node PLL frequency
+`f:<id>` (unit `Hz`); both legitimately start with `f:` and are told apart by
+field count. The reading was confirmed against `central_ups`, which has no
+synchronous machine and therefore could not exhibit the aux form at all. A
+check run on a case that cannot show the failure is not a check.
