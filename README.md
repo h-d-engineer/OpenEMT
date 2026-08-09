@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/h-d-engineer/OpenEMT/actions/workflows/ci.yml/badge.svg)](https://github.com/h-d-engineer/OpenEMT/actions/workflows/ci.yml)
 [![Licence: AGPL v3](https://img.shields.io/badge/licence-AGPL--3.0--only-blue.svg)](LICENSE)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21857083.svg)](https://doi.org/10.5281/zenodo.21857083)
 
 **The electromagnetic transient simulator built for AI agents.**
 
@@ -525,7 +526,12 @@ licensing@openemt.pro.
 
 Contributions are welcome and require a signed [CLA](CLA.md); see
 [CONTRIBUTING.md](CONTRIBUTING.md). The licences cover the code, not the name:
-see [TRADEMARK.md](TRADEMARK.md). To cite OpenEMT, see
-[CITATION.cff](CITATION.cff).
+see [TRADEMARK.md](TRADEMARK.md).
+
+To cite OpenEMT, use the concept DOI
+[10.5281/zenodo.21857083](https://doi.org/10.5281/zenodo.21857083), which always
+resolves to the newest archived release; each release also has its own version
+DOI if you need to pin one. GitHub's "Cite this repository" button reads
+[CITATION.cff](CITATION.cff) and will format it for you.
 
 Copyright (C) 2026 Hiva Nasiri.
