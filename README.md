@@ -1,5 +1,8 @@
 # OpenEMT
 
+[![CI](https://github.com/h-d-engineer/OpenEMT/actions/workflows/ci.yml/badge.svg)](https://github.com/h-d-engineer/OpenEMT/actions/workflows/ci.yml)
+[![Licence: AGPL v3](https://img.shields.io/badge/licence-AGPL--3.0--only-blue.svg)](LICENSE)
+
 **The electromagnetic transient simulator built for AI agents.**
 
 OpenEMT is an EMT (electromagnetic transient) simulator for power systems: an

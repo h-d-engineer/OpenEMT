@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 Hiva Nasiri. Commercial licensing: see LICENSING.md
+#
+# Makes the project's three standing invariants publicly verifiable on every
+# push, instead of asserted in the README:
+#   1. `python build.py` reproduces the committed index.html BYTE FOR BYTE.
+#      This is the load-bearing one: index.html is a generated artifact that
+#      is also the shipped product, so a src/ edit that is not rebuilt, or a
+#      build that is not deterministic, silently ships the wrong file. The
+#      LF normalization in .gitattributes plus build.py's explicit
+#      newline='\n' is what makes this pass on Linux from a Windows-authored
+#      commit; if either regresses, this step is where it surfaces.
+#   2. `node smoke_test.js` (129 per-block checks against analytical or
+#      independent-solver references).
+#   3. `node api/test_api.js` (the headless contract: core.js, CLI, MCP).
+#
+# The Node matrix substantiates package.json's `engines: >=18` claim rather
+# than trusting it: the repo is developed on a much newer runtime, so 18 is
+# otherwise never exercised.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['18', '22']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install API-layer dependencies
+        run: npm ci
+
+      - name: Build must reproduce the committed index.html byte for byte
+        run: |
+          python build.py
+          git diff --exit-code -- index.html
+
+      - name: Block validation suite (smoke_test.js)
+        run: node smoke_test.js
+
+      - name: Headless API suite (core.js + CLI + MCP)
+        run: node api/test_api.js
