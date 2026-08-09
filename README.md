@@ -44,8 +44,11 @@ starts draining. Everything on screen came from one **Load** and one **Run**.*
 
 ## Quick start
 
-**Humans.** Double-click `index.html`. No install, no server, works offline.
-Press **Load** and open anything in [`examples/`](examples/README.md).
+**Humans.** Try it right now at
+**[h-d-engineer.github.io/OpenEMT](https://h-d-engineer.github.io/OpenEMT/)**,
+or download `index.html` and double-click it: no install, no server, works
+offline, and it is the same file either way. Press **Load** and open anything
+in [`examples/`](examples/README.md).
 
 **Agents and scripts.** Node 18+, then:
 
