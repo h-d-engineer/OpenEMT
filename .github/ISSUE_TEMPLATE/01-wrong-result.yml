@@ -1,0 +1,89 @@
+name: Incorrect result
+description: A simulation, power flow, or import produced a number you believe is wrong.
+title: "[result] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A wrong number is the most valuable kind of report. What makes one
+        actionable is a case file plus an independent reference: with both, the
+        problem can usually be reproduced in minutes.
+
+        OpenEMT is beta and its results are not certified. Known accuracy
+        limits are in [VALIDATION.md](../blob/main/VALIDATION.md) and SPEC.md
+        section 7, so it is worth a glance to see whether the gap you found is
+        already documented.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What is wrong
+      description: One or two sentences. Which quantity, on which block or bus.
+      placeholder: Bus 14 phase voltage settles at 210 kV, roughly 5 percent above where it should sit.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected value, and where it comes from
+      description: >
+        The reference matters as much as the number: a closed form result, a
+        published case, another tool's output, or a separately solved
+        equivalent circuit. "It looks wrong" is hard to act on; "MATPOWER
+        case39 gives 1.012 pu here" is immediately actionable.
+    validations:
+      required: true
+
+  - type: textarea
+    id: got
+    attributes:
+      label: Value you actually got
+      description: Include units, and say whether it is phase or line to line.
+    validations:
+      required: true
+
+  - type: textarea
+    id: case
+    attributes:
+      label: Circuit file
+      description: >
+        Paste the saved JSON, or attach it by dragging the file into this box.
+        A shipped example is fine too: name it and list any changes you made.
+        Please strip `pfInit` and `pfV` if you saved after a power flow solve,
+        since those carry one session's operating point rather than the model.
+      render: json
+    validations:
+      required: true
+
+  - type: textarea
+    id: settings
+    attributes:
+      label: Run settings
+      description: Duration, time step, plot step, phases, and whether "Init from PF" was on.
+      placeholder: |
+        Duration: 500 ms
+        dt: 50 us
+        Plot step: 250 us
+        Phases: 3
+        Init from PF: yes
+        Voltage convention: phase
+    validations:
+      required: true
+
+  - type: input
+    id: build
+    attributes:
+      label: Version or build
+      description: >
+        The release tag, or the commit hash if you built from source. If you
+        are running the hosted page, say so and give the date.
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Screenshots of the plot, status line text, console errors.

@@ -1,0 +1,45 @@
+name: Feature request
+description: A block model, a solver capability, or an editor feature that does not exist yet.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Committed work lives in SPEC.md section 5; speculative ideas live in
+        IDEAS.md. Worth checking both first, since the thing you want may
+        already be queued.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: >
+        The task, not the solution. What are you modeling, and what stops you
+        today? This is the part that decides whether a feature is worth
+        building, and it often changes what gets built.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you have in mind
+      description: How you imagine it working. Rough is fine.
+
+  - type: textarea
+    id: prior
+    attributes:
+      label: Prior art
+      description: >
+        For a new block model or numerical method, a published reference is
+        what makes it buildable: the equations have to come from somewhere
+        citable, and new models need a derivation in SPEC.md section 2 plus a
+        validation check against something independent before they can ship.
+        Please do not paste material from a commercial tool's documentation.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do instead today
+      description: The workaround, if you have one. Sometimes the workaround is the better feature.

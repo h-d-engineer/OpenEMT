@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/h-d-engineer/OpenEMT/security/advisories/new
+    about: Report privately through GitHub's advisory channel, not as a public issue. See SECURITY.md.
+  - name: Commercial licensing
+    url: https://github.com/h-d-engineer/OpenEMT/blob/main/LICENSING.md
+    about: Licensing terms and how to get in touch about a commercial licence.
+  - name: How to contribute
+    url: https://github.com/h-d-engineer/OpenEMT/blob/main/CONTRIBUTING.md
+    about: The gate every change must pass, and what a good report contains.

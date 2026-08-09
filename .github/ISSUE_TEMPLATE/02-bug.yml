@@ -1,0 +1,62 @@
+name: Bug in the application
+description: The editor, plots, import, API, or MCP server misbehaves. For a wrong number, use "Incorrect result" instead.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where
+      options:
+        - Canvas and editor
+        - Plots and signals
+        - Power flow / simulation control
+        - Import (PSS/E RAW or other)
+        - Save / load
+        - Headless API or MCP server
+        - Build (build.py) or tests
+        - Somewhere else
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered, starting from a fresh page load. Name the example or attach the circuit file if one is needed.
+      placeholder: |
+        1. Load examples/ieee9bus.json and run it.
+        2. Load examples/ieee39bus.json.
+        3. Look at the plot panel before pressing Run.
+    validations:
+      required: true
+
+  - type: input
+    id: build
+    attributes:
+      label: Version or build
+      description: Release tag, commit hash, or "hosted page" plus the date.
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: Browser and OS
+      description: Not needed for API or build issues, where the Node version is more useful.
+      placeholder: Firefox 141 on Windows 11
+
+  - type: textarea
+    id: console
+    attributes:
+      label: Console output
+      description: Any errors from the browser console or the terminal. Leave blank if there were none.
+      render: text
