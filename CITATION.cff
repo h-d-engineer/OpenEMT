@@ -20,8 +20,8 @@ authors:
   - family-names: Nasiri
     given-names: Hiva
     email: hiva@openemt.pro
-version: 0.1.0
-date-released: 2026-08-08
+version: 0.1.1
+date-released: 2026-08-09
 license: AGPL-3.0-only
 repository-code: "https://github.com/h-d-engineer/OpenEMT"
 # Concept DOI: cite this one unless you need a specific version. It always

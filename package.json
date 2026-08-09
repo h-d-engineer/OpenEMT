@@ -1,6 +1,6 @@
 {
   "name": "openemt",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OpenEMT: an agent-native electromagnetic transient (EMT) and power-flow simulator for AC, DC and hybrid power systems. One deterministic solver core behind three coequal frontends: a browser canvas, a CLI, and an MCP server.",
   "license": "AGPL-3.0-only",
   "author": "Hiva Nasiri <hiva@openemt.pro>",
