@@ -25,10 +25,13 @@ date-released: 2026-08-09
 license: AGPL-3.0-only
 repository-code: "https://github.com/h-d-engineer/OpenEMT"
 # Concept DOI: cite this one unless you need a specific version. It always
-# resolves to the newest archived release. The version DOI below is the
-# permanent snapshot of v0.1.0 itself.
+# resolves to the newest archived release. The identifiers below are the
+# permanent per-version snapshots, newest first.
 doi: 10.5281/zenodo.21857083
 identifiers:
+  - type: doi
+    value: 10.5281/zenodo.21864691
+    description: "Archived snapshot of version 0.1.1"
   - type: doi
     value: 10.5281/zenodo.21857084
     description: "Archived snapshot of version 0.1.0"
