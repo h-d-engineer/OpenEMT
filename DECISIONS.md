@@ -3263,3 +3263,37 @@ open exception, and the two per-example "set Duration to N ms" instructions
 that saved run settings made obsolete. `SPEC.md` section 4 was missing its
 `gtrip` row (35 rows against 36 block types); the table is now checked against
 `DEFS` rather than by eye.
+
+## 2026-08-09 — Example sweep: guards for the four unguarded shipped examples
+`ieee39bus`, `radial_feeder`, `single_phase_lateral` and
+`single_phase_gfm_lateral` shipped with no automated load/run guard, so only
+manual verification stood between a solver change and a broken storefront.
+Each now has one `record()` gate on the single behaviour that example exists
+to demonstrate (39-bus stays synchronized after PF init; the tripped lateral
+drops while the other two ride through; the phase tap makes the PF refuse and
+only the tapped phase sag; the single-phase inverter converges on its
+setpoint), deliberately not on incidental decimals. All four were confirmed to
+FAIL when the thing they guard is broken, per the standing rule that a guard
+which cannot fail is worse than none.
+
+## 2026-08-09 — The integer-cycle RMS rule bit again, in a new test
+Writing the sweep above reproduced the known trap from the other side. A
+2.7-cycle RMS window on `single_phase_lateral` reported the TAPPED phase as
+the highest of the three, and flipped which phase looked sagged between two
+windows 5 ms apart. With integer-cycle windows the same run reads
+2381 / 2370 / 2384 V, matching what `examples/README.md` has always claimed.
+The rule is therefore not only for solver code: any measurement written in a
+test needs it too, and every window in the new sweep is an integer cycle count
+anchored to `r.freqHz`.
+
+## 2026-08-09 — `single_phase_gfm_lateral` ran 200 ms, too short for its claim
+The guard exposed a real defect in the example rather than in the solver: at
+its saved 200 ms the grid-following PI has not converged (delivering ~4.11 kW
+against a 4.00 kW setpoint), and the per-phase current unbalance the example is
+documented to show is smaller than the residual swing, so the ordering of the
+three phases depends on where the RMS window falls. It settles by ~1000 ms
+(4.00 kW, identical at 2000 ms). Saved duration raised 200 -> 1000 ms (a run
+setting, no physics touched) and the README numbers corrected to the settled
+values; the documented 15.16 vs 15.13 A pair turned out to be a mid-swing
+measurement. The unbalance is genuine but is a ~0.03% effect, so the smoke test
+prints it and gates on the setpoint convergence instead.

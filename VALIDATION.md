@@ -120,9 +120,28 @@ steady state of the file; they guard wiring typos and cross-block regressions.
 | `fixture:central_ups` | `examples/central_ups.json` | UPS trip blackout + 360 V battery catch + IT ride-through |
 | `fixture:central_ups_sag` | `examples/central_ups_sag.json` | sag ~24% retained + DC handoff + IT >95% (case-study numbers) |
 
-The larger `examples/` (ieee9bus, ieee39bus, syncgen_droop, radial_feeder)
-are not in the per-block registry: they are stress-test cases documented in
-`examples/README.md`, not analytical validation checks.
+| `example:ieee39bus` | `examples/ieee39bus.json` | 147-block system: PF converges, all 39 buses inside 0.9 to 1.1 pu, all 10 machines on nominal after an undisturbed PF-initialized run |
+| `example:radial_feeder` | `examples/radial_feeder.json` | selectivity: the tripped lateral drops to ~0 V, the other two stay within 10% of pre-trip |
+| `example:single_phase_lateral` | `examples/single_phase_lateral.json` | PF refuses the tap (documented behaviour); only the tapped phase sags; a lateral fault collapses the 240 V service while A and C ride through |
+| `example:single_phase_gfm_lateral` | `examples/single_phase_gfm_lateral.json` | single-phase inverter is present on phase B only and its PI converges onto the 4 kW setpoint within 2% |
+
+The last four are **integration guards, not analytical checks**: they assert
+the one behaviour each example is shipped to demonstrate, so that a solver or
+example change cannot silently break the storefront. They deliberately do not
+gate on incidental decimals. The `single_phase_gfm_lateral` per-phase current
+unbalance is a case in point: it is real but is a ~0.03% effect, so it is
+printed rather than gated, because writing this guard showed that the sign of
+that ordering depends on where the RMS window falls.
+
+Every RMS window in these four is an **integer number of cycles**. This is not
+a stylistic preference: a 2.7-cycle window on `single_phase_lateral` reported
+the tapped phase as the highest of the three and changed which phase looked
+sagged from one window to the next, which is exactly the failure mode the
+integer-cycle rule exists to prevent.
+
+The remaining large `examples/` (ieee9bus, syncgen_droop) are covered by their
+own entries above; the two PSS/E load-flow imports are checked against their
+source cases' own bus voltages rather than against an analytical reference.
 
 ## Tolerance rationale
 

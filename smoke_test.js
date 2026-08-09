@@ -4780,4 +4780,162 @@ console.log('gfm status:', els_stubs.stat.textContent);
   c81U==='81U'&&c27==='27'&&cNone===null);
 }
 
+// ---- shipped-example sweep: the four examples/ files with no other guard.
+// showcase, central_ups(_sag), syncgen_droop, ieee9bus and the two load-flow
+// imports are asserted elsewhere in this file; these four were verified by
+// hand only, so nothing caught future drift in them. Each case is loaded the
+// way the app loads it (own vconv, own saved sim settings) and checked on the
+// ONE claim examples/README.md makes for it, not on incidental decimals: the
+// point is a guard that survives ordinary retuning but fails on a real
+// regression. ----
+{
+ // Load a shipped example exactly as ui.js applyCircuit does: the file's own
+ // voltage convention (S.vconv is global and leaks between tests, CLAUDE.md)
+ // and its own run settings, so the sweep measures the study the file
+ // describes rather than a 120 ms default.
+ const loadEx=name=>{
+  const ex=JSON.parse(fs.readFileSync('examples/'+name+'.json','utf8'));
+  S.blocks.length=0; S.wires.length=0; S.vconv=ex.vconv||'ph';
+  S.blocks.push(...ex.blocks); S.wires.push(...ex.wires);
+  const s=ex.sim||{};
+  return {Tms:s.duration||120, dtUs:s.dtUs||50, plotUs:s.plotUs||0, nph:s.nph||3, pfinit:!!s.pfinit};
+ };
+ const runEx=name=>{
+  const s=loadEx(name);
+  // pfinit is what the file asks for and what the UI does; simulate() never
+  // does it on its own (the api/core.js trap), so solve it here explicitly.
+  if(s.pfinit){
+   const pf=solvePowerFlow({});
+   if(pf.err||!pf.converged) return {err:'power flow: '+(pf.err||'did not converge')};
+  }
+  const r=simulate(s.nph,s.Tms,null,s.dtUs,s.plotUs);
+  return r.err?{err:r.err}:Object.assign(r,{Tms:s.Tms});
+ };
+ // RMS over an INTEGER number of cycles ending at `end` (default: end of run).
+ // Not optional here (CLAUDE.md): on single_phase_lateral a 2.7-cycle window
+ // reported the tapped phase as the HIGHEST of the three and flipped which
+ // phase looked sagged from one window to the next. The partial cycle, not
+ // the physics, was doing the talking.
+ const rmsCyc=(r,v,ncyc,end)=>{
+  const T=1000/(r.freqHz||60);
+  const hi=end==null?r.t[r.t.length-1]+1e-9:end, lo=hi-ncyc*T;
+  let s=0,n=0;
+  for(let i=0;i<r.t.length;i++)if(r.t[i]>=lo&&r.t[i]<hi){s+=v[i]*v[i];n++;}
+  return Math.sqrt(s/Math.max(1,n));
+ };
+ const vOf=(r,id,ph)=>r.vp[r.probeMeta.findIndex(m=>m.id===id)][ph];
+ const peak=r=>{let m=0;r.vp.forEach(p=>p.forEach(ph=>ph.forEach(v=>{if(Math.abs(v)>m)m=Math.abs(v);})));return m;};
+
+ // ieee39bus: 147 blocks, the largest model here. The claim is that it stays
+ // up: PF converges, and after PF init an undisturbed run holds every bus
+ // inside a 0.9-1.1 pu band and every machine on nominal. The frequency check
+ // is the sharp one -- a 10-machine system that loses synchronism shows there
+ // first, long before the voltages look wrong.
+ {
+  const r=runEx('ieee39bus');
+  if(r.err){console.log('ieee39bus error:',r.err);record('example:ieee39bus','IEEE 39-bus loads, PF converges, undisturbed run stays synchronized',false);}
+  else{
+   let lo=1e9,hi=0; // 12 whole cycles at the end of the run, all 39 buses
+   r.probeMeta.forEach(m=>{const v=rmsCyc(r,vOf(r,m.id,0),12)/1000; if(v<lo)lo=v; if(v>hi)hi=v;});
+   const okV=lo>0.90*199.2&&hi<1.10*199.2;
+   const fIdx=r.curMeta.map((m,i)=>m.kind==='syncgen'?i:-1).filter(i=>i>=0);
+   const fEnd=fIdx.map(i=>{const a=r.aux[i];return a?a[a.length-1]:NaN;});
+   const worstF=Math.max(...fEnd.map(f=>Math.abs(f-60)));
+   const okF=fIdx.length===10&&worstF<0.15;
+   const okPk=peak(r)/1000<400;
+   console.log('ieee39bus: 39 bus RMS',lo.toFixed(1),'to',hi.toFixed(1),'kV phase (nominal 199.2, band 179-219)',okV?'PASS':'FAIL',
+    ';',fIdx.length,'machines, worst |f-60| =',worstF.toFixed(4),'Hz',okF?'PASS':'FAIL',
+    '; max |V| anywhere',(peak(r)/1000).toFixed(0),'kV',okPk?'PASS':'FAIL');
+   record('example:ieee39bus','IEEE 39-bus loads, PF converges, undisturbed run stays synchronized',okV&&okF&&okPk);
+  }
+ }
+
+ // radial_feeder: one of three lateral breakers opens at 50 ms. The whole
+ // point of the example is selectivity -- that ONE load drops and the other
+ // two do not notice -- so that is exactly what is asserted.
+ {
+  const r=runEx('radial_feeder');
+  if(r.err){console.log('radial_feeder error:',r.err);record('example:radial_feeder','radial feeder: tripped lateral drops, the other two ride through',false);}
+  else{
+   // pre: 2 whole cycles ending just before the 50 ms open; post: 6 whole
+   // cycles at the end of the run, well clear of the switching transient.
+   const pre=id=>rmsCyc(r,vOf(r,id,0),2,48), post=id=>rmsCyc(r,vOf(r,id,0),6);
+   const dead=post(17), a=post(8), b=post(12), aPre=pre(8), bPre=pre(12);
+   const okDead=dead<5, okA=Math.abs(a-aPre)/aPre<0.10, okB=Math.abs(b-bPre)/bPre<0.10;
+   console.log('radial_feeder: tripped lateral (probe 17) post-open',dead.toFixed(2),'V rms (expect ~0)',okDead?'PASS':'FAIL',
+    '; healthy laterals',a.toFixed(1),'/',b.toFixed(1),'V vs pre-trip',aPre.toFixed(1),'/',bPre.toFixed(1),(okA&&okB)?'PASS':'FAIL');
+   record('example:radial_feeder','radial feeder: tripped lateral drops, the other two ride through',okDead&&okA&&okB);
+  }
+ }
+
+ // single_phase_lateral: a phase-B lateral off a 2.4 kV feeder. Two claims.
+ // (1) solvePowerFlow REFUSES any circuit containing a tap -- positive
+ // sequence cannot represent an unbalanced lateral -- and that refusal is
+ // documented behaviour, so it is guarded as behaviour, not worked around.
+ // (2) the lateral creates real unbalance: only the tapped phase sags, and a
+ // fault on the lateral collapses the 240 V service while A and C ride on.
+ {
+  const s=loadEx('single_phase_lateral');
+  const pfRefused=(()=>{const pf=solvePowerFlow({});return !!(pf&&pf.err&&/Phase Tap/.test(pf.err));})();
+  const r=simulate(s.nph,s.Tms,null,s.dtUs,s.plotUs);
+  if(r.err){console.log('single_phase_lateral error:',r.err);record('example:single_phase_lateral','phase-B lateral: PF refuses the tap, EMT shows unbalance + lateral-only fault',false);}
+  else{
+   // Cold start (PF is unavailable here), so compare the tapped phase against
+   // the MEAN of the two untapped ones and separately assert that those two
+   // stay equal to each other -- "only the tapped phase moves" is the claim.
+   const fA=rmsCyc(r,vOf(r,7,0),4), fB=rmsCyc(r,vOf(r,7,1),4), fC=rmsCyc(r,vOf(r,7,2),4);
+   const okSag=fB<(fA+fC)/2-5, okSym=Math.abs(fA-fC)/fA<0.01;
+   const secRest=rmsCyc(r,vOf(r,16,0),4), okSec=Math.abs(secRest-235)<235*0.05;
+   // 2 whole cycles inside the 60-100 ms fault, ending before it clears.
+   const secFlt=rmsCyc(r,vOf(r,16,0),2,99), okFlt=secFlt<secRest*0.25;
+   const acFlt=Math.min(rmsCyc(r,vOf(r,7,0),2,99),rmsCyc(r,vOf(r,7,2),2,99)), okAC=acFlt>2000;
+   console.log('single_phase_lateral: PF refuses the tap',pfRefused?'PASS':'FAIL',
+    '; feeder A/B/C',fA.toFixed(0)+'/'+fB.toFixed(0)+'/'+fC.toFixed(0),'V (only the tapped phase B sags; A==C)',(okSag&&okSym)?'PASS':'FAIL',
+    '; 240 V service at rest',secRest.toFixed(1),'V',okSec?'PASS':'FAIL',
+    '; during the lateral fault',secFlt.toFixed(1),'V with A,C still >=',acFlt.toFixed(0),'V',(okFlt&&okAC)?'PASS':'FAIL');
+   record('example:single_phase_lateral','phase-B lateral: PF refuses the tap, EMT shows unbalance + lateral-only fault',
+    pfRefused&&okSag&&okSym&&okSec&&okFlt&&okAC);
+  }
+ }
+
+ // single_phase_gfm_lateral: a grid-following inverter on ONE phase. What is
+ // gated is the claim that is actually load bearing and actually stable: the
+ // inverter exists on phase B only and its PI converges onto its 4 kW
+ // setpoint. The downstream per-phase current unbalance is real but is a
+ // ~0.03% effect, so it is PRINTED, not gated -- writing this guard is what
+ // showed that the case's original 200 ms duration ended mid-swing (4.11 kW
+ // against a 4.00 kW setpoint) and that the sign of the unbalance flipped
+ // with the RMS window length. The example now runs 1000 ms; a check that
+ // can pass or fail on window choice is not a check.
+ {
+  const s=loadEx('single_phase_gfm_lateral');
+  const pfRefused=(()=>{const pf=solvePowerFlow({});return !!(pf&&pf.err&&/Phase Tap/.test(pf.err));})();
+  const r=simulate(s.nph,s.Tms,null,s.dtUs,s.plotUs);
+  if(r.err){console.log('single_phase_gfm_lateral error:',r.err);record('example:single_phase_gfm_lateral','1-ph GFM lateral: inverter delivers on its own phase and unbalances the service load',false);}
+  else{
+   const li=r.curMeta.findIndex(m=>m.id===4); // balanced 3-ph service load
+   const iA=rmsCyc(r,r.ic[li][0],8), iB=rmsCyc(r,r.ic[li][1],8), iC=rmsCyc(r,r.ic[li][2],8);
+   const gi=r.curMeta.findIndex(m=>m.kind==='gfm');
+   const okOnePhase=gi>=0&&r.ic[gi].length===1&&r.curMeta[gi].ph0===1; // phase B only
+   // Delivered power on that phase, from the inverter's own branch: v*i over
+   // whole cycles, negated because gfm injects at terminal 0 (signFor).
+   const pi14=r.probeMeta.findIndex(m=>m.id===14);
+   const T=1000/(r.freqHz||60), hiT=r.t[r.t.length-1], loT=hiT-8*T;
+   let ps=0,pn=0;
+   for(let i=0;i<r.t.length;i++)if(r.t[i]>=loT){ps+=r.vp[pi14][0][i]*r.ic[gi][0][i];pn++;}
+   const pGfm=-ps/Math.max(1,pn);
+   const okP=Math.abs(pGfm-4000)<4000*0.02;
+   const lat=rmsCyc(r,vOf(r,14,0),8), okLat=lat>240&&lat<310;
+   console.log('single_phase_gfm_lateral: PF refuses the tap',pfRefused?'PASS':'FAIL',
+    '; inverter is single-phase on B',okOnePhase?'PASS':'FAIL',
+    '; delivers',pGfm.toFixed(0),'W on that phase (setpoint 4000 +/-2%)',okP?'PASS':'FAIL',
+    '; lateral holds',lat.toFixed(0),'V',okLat?'PASS':'FAIL',
+    '; service-load Irms A/B/C',iA.toFixed(3)+'/'+iB.toFixed(3)+'/'+iC.toFixed(3),'A (B>A, ~0.03%: reported, not gated)');
+   record('example:single_phase_gfm_lateral','1-ph GFM lateral: single-phase inverter converges on its 4 kW setpoint',
+    pfRefused&&okOnePhase&&okP&&okLat);
+  }
+ }
+ S.vconv='ph'; // global, leaks into anything that runs after this (CLAUDE.md)
+}
+
 summary();

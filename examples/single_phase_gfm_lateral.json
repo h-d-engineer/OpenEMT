@@ -2,7 +2,7 @@
  "webemt": 1,
  "vconv": "ph",
  "sim": {
-  "duration": 200,
+  "duration": 1000,
   "dtUs": 50,
   "plotUs": 250,
   "nph": 3,

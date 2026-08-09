@@ -456,7 +456,7 @@ SOC ramping down once it carries the load.
 ## Validation
 
 `node smoke_test.js` runs every block in canned circuits headless and checks
-the results against analytical or independent-solver references (129 checks,
+the results against analytical or independent-solver references (133 checks,
 per-block PASS/FAIL summary). [`VALIDATION.md`](VALIDATION.md) is the
 manifest: per-block checks, reference types, tolerances, and the rationale
 for each tolerance band. Every new block ships with its checks appended to
