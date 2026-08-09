@@ -12104,6 +12104,16 @@ function plotHeight(pl) {
   const h = +pl.h;
   return (h >= PLOT_H_MIN && h <= PLOT_H_MAX) ? Math.round(h) : PLOT_H0;
 }
+// SI prefixes for axis tick labels (issue #6). Power systems live at 400 kV
+// and 3 GW, and printing those raw gives five labels of the form "399982.4"
+// that are slow to read, hard to compare against each other, and wide enough
+// that the axis gutter grows to fit them and steals plot width.
+const SI_STEPS = [[1e12, 'T'], [1e9, 'G'], [1e6, 'M'], [1e3, 'k'], [1, ''], [1e-3, 'm'], [1e-6, 'µ'], [1e-9, 'n'], [1e-12, 'p']];
+function siScale(mag) {
+  if (!isFinite(mag) || mag === 0) return { div: 1, sfx: '' };
+  const hit = SI_STEPS.find(([f]) => mag >= f);
+  return hit ? { div: hit[0], sfx: hit[1] } : { div: 1e-12, sfx: 'p' };
+}
 // The 5 y-axis tick labels for a range, with the decimal count driven by the
 // tick STEP: on a 0.04 Hz-wide window every tick would otherwise round to the
 // same integer. Falls back to exponential when a label would run wider than
@@ -12111,16 +12121,30 @@ function plotHeight(pl) {
 function tickLabels(r) {
   const span = r.mx - r.mn, step = Math.abs(span / 4) || 1;
   const vals = [0, 1, 2, 3, 4].map(i => r.mx - span * i / 4);
+  // ONE prefix for the whole axis, chosen from the largest tick, so the five
+  // labels stay directly comparable: 400k / 300k / 200k, never
+  // 400k / 300000 / 200000. The prefix rides the number rather than being
+  // promoted to an axis unit label, because one axis can legitimately carry a
+  // V series and an A series at the same time and there is no single correct
+  // unit to print there; the legend already names each series' unit.
+  const { div, sfx } = siScale(Math.max(...vals.map(v => Math.abs(v))));
+  const sv = vals.map(v => v / div), sstep = step / div;
   // One more decimal than the step's own magnitude, so neighbouring ticks
   // always differ in the last-but-one digit, then drop any trailing-zero
   // column ALL five labels share (0.01 steps want "60.02", not "60.020").
-  let dec = Math.max(0, Math.min(9, 1 - Math.floor(Math.log10(step))));
-  let out = vals.map(v => v.toFixed(dec));
-  while (dec > 0 && out.every(s => s.endsWith('0'))) { dec--; out = vals.map(v => v.toFixed(dec)); }
+  let dec = Math.max(0, Math.min(9, 1 - Math.floor(Math.log10(sstep))));
+  let out = sv.map(v => v.toFixed(dec));
+  while (dec > 0 && out.every(s => s.endsWith('0'))) { dec--; out = sv.map(v => v.toFixed(dec)); }
   // Fixed notation ran out of resolution (a nano-scale axis): every tick would
-  // print the same string, so switch the whole axis to exponential.
+  // print the same string, so switch the whole axis to exponential. The prefix
+  // is dropped there rather than combined, since "1.23e-5k" reads as nonsense.
   if (out[0] === out[4]) return vals.map(v => v.toExponential(2));
-  return out.map((s, i) => (s.length > 11 ? vals[i].toExponential(2) : s));
+  // A tick that has rounded to zero carries no magnitude, so it takes neither
+  // decimals nor a prefix: "566k / 283k / 0 / -283k / -566k" rather than the
+  // "0k" a blanket suffix produces. This also kills the "-0" that an axis
+  // straddling zero asymmetrically used to print (a 454.295 to -454.702 range
+  // puts a tick at -0.2035, and toFixed(0) renders that as "-0").
+  return out.map((s, i) => (parseFloat(s) === 0 ? '0' : s.length > 11 ? vals[i].toExponential(2) : s + sfx));
 }
 // The drawable form of a plot's selection: samples + style + axis side. Shared
 // by the renderer, the legend and the PNG/CSV exporters so an exported figure
@@ -12145,14 +12169,29 @@ function windowBounds(win) {
   if (i1 < i0) { i0 = 0; i1 = Math.max(0, t.length - 1); }
   return { i0, i1 };
 }
+// Vertical auto-fit for one axis, over the samples in the visible time window.
+// Seeded from the DATA, not from zero (issue #5). Anchoring the axis at zero
+// spent its whole height on the empty space below a large mean: a 60 Hz trace
+// was drawn on a -4.8 to 64.8 axis, where a real 60.00 to 60.05 Hz excursion is
+// about a third of a pixel and reads as a dead flat line. Same for a battery
+// SOC moving 70.0 to 70.5 percent on a 0 to 100 axis, and for any DC bus
+// voltage. An AC waveform straddles zero by itself, so voltage and current
+// traces are unaffected by the change; what gains is exactly the class of
+// signal whose information lives in a small excursion about a large value.
 function axisRange(series, side, i0, i1) {
-  let mn = 0, mx = 0, any = false;
+  let mn = Infinity, mx = -Infinity, any = false;
   series.forEach(s => {
     if (s.axis !== side) return;
     for (let i = i0; i <= i1; i++) { const v = s.samples[i]; if (v === undefined) continue; any = true; if (v < mn) mn = v; if (v > mx) mx = v; }
   });
   if (!any) return null;
-  if (mx === mn) { mx += 1; mn -= 1; }
+  // Flat, or flat to within solver noise. Fitting to the data would otherwise
+  // magnify 1e-12 numerical dust into a mountain range that looks like real
+  // dynamics, so anything below a relative floor is treated as constant and
+  // given a modest window (0.1% of the value) around it instead. A trace that
+  // is flat at exactly zero has no scale to work from and keeps the old +/- 1.
+  const scale = Math.max(Math.abs(mn), Math.abs(mx));
+  if (mx - mn <= 1e-9 * scale) { const p = scale ? scale * 1e-3 : 1; mx += p; mn -= p; }
   const pad = (mx - mn) * 0.08; return { mn: mn - pad, mx: mx + pad };
 }
 function drawOnePlot(pl, dark) {
