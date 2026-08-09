@@ -3317,3 +3317,23 @@ being a stale answer to this one. Blanked plots then say "No results yet" and
 stale ones say "Circuit changed since this run", because silently empty plots
 read as a fault in the tool. Flow arrows are cleared by the same signal: they
 are keyed by wire INDEX, so any structural edit silently re-points them.
+
+## 2026-08-09 — Canvas search, on "/" rather than Ctrl+F (issue #2)
+Finding a component on a large model had no answer but panning and reading
+labels: IEEE39 is 147 blocks over roughly 4200 x 2700 world units, and the
+zoom level that fits it on screen makes the symbols unreadable. Browser
+find-in-page cannot substitute, because the schematic is SVG drawn from
+S.blocks at world coordinates, so an off-screen block is not in the page's
+text flow and Ctrl+F has nothing to scroll to. The shortcut is "/" for that
+reason and one more: Ctrl+F belongs to the browser and taking it would break a
+thing users rely on, while "/" is unclaimed in every browser and already means
+find in vim, GitHub, Gmail and Slack. Two behavioural choices worth recording.
+Browsing is non-destructive: typing and the arrow keys move only the camera,
+and only Enter or a click in the result list selects a block and opens its
+parameter rail, so a search abandoned with Esc leaves the circuit exactly as it
+was (Esc also restores the view, unless the jump was committed, in which case
+it was asked for and is kept). And a reveal only ever zooms IN, never out:
+someone who framed a region deliberately keeps their scale, and zooming out to
+show something already on screen would throw that away. The find box lives in
+the status row rather than floating over the canvas because the params and
+science rails already occupy both canvas edges top to bottom.
