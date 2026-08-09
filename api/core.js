@@ -129,15 +129,20 @@ class OpenEMT {
   loadCircuit(input) {
     let d;
     if (typeof input === 'string') {
-      // Heuristic: treat as a file path if it ends in .json or resolves to an
-      // existing file; otherwise treat as a JSON string.
-      let parsed = null;
-      if (/\.json$/i.test(input) || fs.existsSync(input)) {
-        parsed = JSON.parse(fs.readFileSync(input, 'utf8'));
+      // Discriminate on CONTENT SHAPE, not on the extension: serialized JSON
+      // always opens with { or [, and no filesystem path does. The old test
+      // (".json suffix or existing file, else JSON.parse") sent a mistyped or
+      // non-existent path into JSON.parse, so `run ieee9bus` reported
+      // "Unexpected token 'C'" about the user's own path instead of saying the
+      // file was missing. Both branches return an err rather than throwing.
+      if (/^\s*[{[]/.test(input)) {
+        try { d = JSON.parse(input); }
+        catch (e) { return { err: 'Could not parse circuit JSON: ' + e.message }; }
       } else {
-        parsed = JSON.parse(input);
+        if (!fs.existsSync(input)) return { err: 'File not found: ' + input };
+        try { d = JSON.parse(fs.readFileSync(input, 'utf8')); }
+        catch (e) { return { err: 'Could not parse ' + input + ': ' + e.message }; }
       }
-      d = parsed;
     } else if (input && typeof input === 'object') {
       d = input;
     } else {

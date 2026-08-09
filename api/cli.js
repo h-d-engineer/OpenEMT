@@ -10,10 +10,13 @@
 // Usage:
 //   openemt catalog [--json]
 //   openemt examples
-//   openemt pf <file.json> [--busType <json>] [--json]
-//   openemt run <file.json> [--nph 3] [--Tms 200] [--dt 50] [--plot 0] [--pf] [--json]
-//   openemt query <file.json> --block <id> --signal V|Vrms|I|Irms|P|Q
+//   openemt pf <case> [--busType <json>] [--json]
+//   openemt run <case> [--nph 3] [--Tms 200] [--dt 50] [--plot 0] [--pf] [--json]
+//   openemt query <case> --block <id> --signal V|Vrms|I|Irms|P|Q
 //                  [--nph 3] [--Tms 200] [--dt 50] [--pf] [--tail] [--json]
+//
+// <case> is a path to a circuit .json OR the bare name of a shipped example
+// (see `openemt examples`); resolveCase() below explains why both.
 //
 // run/query take their duration, time step, plot step and phase mode from the
 // circuit file's saved `sim` block, exactly as the UI does. The flags below
@@ -30,6 +33,27 @@ const { OpenEMT } = require('./core.js');
 
 const program = new Command();
 program.name('openemt').description('OpenEMT headless solver CLI (catalog, power flow, simulation, query).');
+
+
+// pf/run/query accept either a path to a circuit file or the bare name of a
+// shipped example, as printed by `openemt examples`. Installed from npm there
+// is no examples/ directory in the user's cwd, so that name is the only handle
+// they have: without this, `openemt examples` advertises names that every
+// other command then rejects. A path always wins over an example of the same
+// name, and anything containing a separator is treated as a path only.
+function resolveCase(em, file) {
+  const p = path.resolve(file);
+  if (fs.existsSync(p)) return em.loadCircuit(p);
+  if (!/[\\/]/.test(file)) {
+    // A bare word: the user meant an example name, so answer in those terms.
+    // Reporting a resolved absolute path they never typed is just confusing.
+    const bare = file.replace(/\.json$/i, '');
+    const ex = em.listExamples();
+    if (ex.includes(bare)) return em.loadExample(bare);
+    return { err: 'No such file or example: ' + file + '\nShipped examples: ' + ex.join(', ') };
+  }
+  return em.loadCircuit(p); // yields the clean "File not found" error
+}
 
 
 // A single-phase lateral (SPEC §2 phase tap) has ONE real reading, on its own
@@ -116,12 +140,12 @@ program.command('import')
 // ---- power flow ----
 program.command('pf')
   .description('Solve the positive-sequence power flow of a circuit file.')
-  .argument('<file>', 'circuit JSON (webemt:1)')
+  .argument('<file>', 'circuit JSON (webemt:1), or the name of a shipped example')
   .option('--bus-type <json>', 'JSON object {blockId: "slack"|"PV"|"PQ"} overriding block pfType.')
   .option('--json', 'Emit machine-readable JSON.')
   .action((file, opts) => {
     const em = new OpenEMT();
-    const lr = em.loadCircuit(path.resolve(file));
+    const lr = resolveCase(em, file);
     if (lr && lr.err) fail(lr.err);
     let busType = undefined;
     if (opts.busType) { try { busType = JSON.parse(opts.busType); } catch (e) { fail('--bus-type: ' + e.message); } }
@@ -147,7 +171,7 @@ program.command('pf')
 // ---- simulation ----
 program.command('run')
   .description('Run a time-domain simulation of a circuit file.')
-  .argument('<file>', 'circuit JSON (webemt:1)')
+  .argument('<file>', 'circuit JSON (webemt:1), or the name of a shipped example')
   .option('--nph <n>', 'phase count (1 or 3); default: the file\'s saved setting, else 3', v => parseInt(v, 10))
   .option('--Tms <ms>', 'simulation duration in ms; default: the file\'s saved setting, else 120', v => parseFloat(v))
   .option('--dt <us>', 'solver time step in microseconds; default: the file\'s saved setting, else 50', v => parseFloat(v))
@@ -156,7 +180,7 @@ program.command('run')
   .option('--json', 'Emit machine-readable JSON.')
   .action((file, opts) => {
     const em = new OpenEMT();
-    const lr = em.loadCircuit(path.resolve(file));
+    const lr = resolveCase(em, file);
     if (lr && lr.err) fail(lr.err);
     if (opts.pf) {
       const pf = em.runPowerFlow();
@@ -186,7 +210,7 @@ program.command('run')
 // ---- query ----
 program.command('query')
   .description('Query a signal from a simulation run by block ID.')
-  .argument('<file>', 'circuit JSON (webemt:1)')
+  .argument('<file>', 'circuit JSON (webemt:1), or the name of a shipped example')
   .requiredOption('--block <id>', 'block ID to query', v => parseInt(v, 10))
   .requiredOption('--signal <s>', 'V | Vrms | I | Irms | P | Q')
   .option('--nph <n>', 'phase count (1 or 3); default: the file\'s saved setting, else 3', v => parseInt(v, 10))
@@ -197,7 +221,7 @@ program.command('query')
   .option('--json', 'Emit machine-readable JSON.')
   .action((file, opts) => {
     const em = new OpenEMT();
-    const lr = em.loadCircuit(path.resolve(file));
+    const lr = resolveCase(em, file);
     if (lr && lr.err) fail(lr.err);
     if (opts.pf) {
       const pf = em.runPowerFlow();

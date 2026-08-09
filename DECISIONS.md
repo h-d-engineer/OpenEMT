@@ -3373,3 +3373,45 @@ frequency, unit `f Hz`), a different family from the node PLL frequency
 field count. The reading was confirmed against `central_ups`, which has no
 synchronous machine and therefore could not exhibit the aux form at all. A
 check run on a case that cannot show the failure is not a check.
+
+## 2026-08-09 - npm publishability, and case resolution by example name
+
+The package is now publishable (`private: true` removed) with a `files`
+allowlist, `repository`/`homepage`/`bugs`/`keywords` for the npm page, and a
+`prepublishOnly` that runs both suites. Tarball is 680 kB packed, 2.3 MB
+unpacked, 31 files. `index.html` and the whole of `src/` ship deliberately: the
+browser app is usable offline from the package, which matters on the isolated
+networks this audience often works on, and AGPL section 6 wants the
+corresponding source alongside the built artifact anyway. A second bin,
+`openemt-mcp`, makes MCP client config a one-liner (`npx -y openemt-mcp`)
+instead of a path into `node_modules`.
+
+Publishing before any public announcement is the point, not a nicety: an
+unclaimed `openemt` on npm during a traffic spike is a supply-chain hole, since
+`npm i openemt` is what a reader will type on reflex.
+
+Installing the tarball into an empty project immediately exposed two defects
+that are invisible from inside the repo, where `examples/` happens to sit in
+the cwd. `openemt examples` printed names (`ieee9bus`) that `run`, `pf` and
+`query` all rejected, because those commands only accepted a filesystem path,
+and an installed user has no `examples/` directory to point at: the names were
+the only handle they had. Underneath, `loadCircuit` discriminated path from
+JSON content by ".json suffix or existing file, else JSON.parse", so any name
+that was neither got parsed AS JSON and a typo reported `Unexpected token 'C'`
+about the user's own path.
+
+`loadCircuit` now discriminates on content shape (serialized JSON always opens
+with `{` or `[`; no path does), returns an err instead of throwing on both
+branches, and says "File not found" for a missing path. `resolveCase()` in the
+CLI tries the path first, then a shipped example name, and answers a bare word
+in example terms by listing the valid names rather than echoing an absolute
+path the user never typed. A path always wins over an example of the same name.
+
+Guard verification caught its own miss here. The first attempt to break the
+example-name branch was a no-op (a regex escaping error in the throwaway patch
+script), so the guard reported green while testing nothing, and only the
+core.js half was really exercised. Re-broken for real, all five new checks
+fail. The break also showed the new block aborting the whole file on a nonzero
+CLI exit, which would have hidden every later test including the MCP suite, so
+the child-process calls now route through a tolerant runner that turns an exit
+code into a FAIL on the check that cares.

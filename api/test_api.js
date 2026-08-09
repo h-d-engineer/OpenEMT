@@ -580,6 +580,67 @@ function approxPct(sim, exp) { return Math.abs(sim - exp) / Math.abs(exp) * 100;
   check('CLI --pf clears the PF-init warning', (runO.warnings || []).length === 0, JSON.stringify(runO.warnings));
 }
 
+// ---- case resolution: a bare example name, and clean not-found errors ----
+// Installed from npm there is no examples/ directory in the user's cwd, so the
+// names printed by `openemt examples` are the only handle a user has. They used
+// to be rejected by every other command, and a non-existent path was fed to
+// JSON.parse, so a typo reported "Unexpected token 'C'" about the user's path.
+{
+  const root = path.resolve(__dirname, '..');
+  // Tolerant runner: a nonzero exit must surface as a FAIL on the check that
+  // cares, not as an uncaught throw that aborts every later test in the file.
+  const cliTry = (args) => {
+    try {
+      return { ok: true, out: execFileSync('node', [path.join('api', 'cli.js'), ...args],
+        { cwd: root, encoding: 'utf8', stdio: 'pipe' }) };
+    } catch (e) {
+      return { ok: false, status: e.status, out: String(e.stdout || ''), err: String(e.stderr || '') };
+    }
+  };
+  const jsonOf = (r) => { try { return r.ok ? JSON.parse(r.out) : {}; } catch (e) { return {}; } };
+
+  const rName = cliTry(['run', 'ieee9bus', '--Tms', '20', '--json']);
+  const rPath = cliTry(['run', path.join('examples', 'ieee9bus.json'), '--Tms', '20', '--json']);
+  const byName = jsonOf(rName), byPath = jsonOf(rPath);
+  check('CLI run accepts a bare example name', rName.ok && byName.nT > 0,
+    'exit=' + rName.status + ' ' + String(rName.err || '').slice(0, 100));
+  check('bare name and path give the same run',
+    rName.ok && rPath.ok && byName.nT === byPath.nT && byName.tEnd === byPath.tEnd,
+    byName.nT + '/' + byName.tEnd + ' vs ' + byPath.nT + '/' + byPath.tEnd);
+  const rPf = cliTry(['pf', 'ieee9bus', '--json']);
+  const pfName = jsonOf(rPf);
+  check('CLI pf accepts a bare example name', rPf.ok && pfName.converged && pfName.buses.length === 10,
+    'exit=' + rPf.status + ' ' + JSON.stringify(pfName).slice(0, 80));
+
+  // A bare word that is not an example is answered in example terms, listing
+  // the valid names; a bad PATH is answered as a missing file. Neither may ever
+  // surface a JSON syntax error about the user's own argument.
+  const rMiss = cliTry(['run', 'no-such-case', '--json']);
+  check('CLI unknown case exits nonzero', !rMiss.ok && rMiss.status === 1, 'status=' + rMiss.status);
+  check('CLI unknown bare name lists the examples',
+    !rMiss.ok && /No such file or example/.test(rMiss.err) && /ieee9bus/.test(rMiss.err)
+      && !/Unexpected token/.test(rMiss.err),
+    JSON.stringify(String(rMiss.err || '').slice(0, 140)));
+  const rBadPath = cliTry(['run', path.join('examples', 'no-such-case.json'), '--json']);
+  check('CLI bad path says file not found',
+    !rBadPath.ok && /File not found/.test(rBadPath.err) && !/Unexpected token/.test(rBadPath.err),
+    JSON.stringify(String(rBadPath.err || '').slice(0, 140)));
+
+  // loadCircuit's path/JSON discrimination, at the core level.
+  const em = new OpenEMT();
+  const miss = em.loadCircuit(path.join(root, 'examples', 'definitely-absent.json'));
+  check('loadCircuit missing path returns err, not a throw', !!(miss && /File not found/.test(miss.err)),
+    JSON.stringify(miss));
+  const bad = em.loadCircuit('{ "webemt": 1, oops');
+  check('loadCircuit malformed JSON returns err', !!(bad && /Could not parse circuit JSON/.test(bad.err)),
+    JSON.stringify(bad));
+  const em2 = new OpenEMT();
+  const asText = fs.readFileSync(path.join(root, 'examples', 'ieee9bus.json'), 'utf8');
+  const okStr = em2.loadCircuit(asText);
+  check('loadCircuit still accepts a JSON string', !(okStr && okStr.err) && okStr.nBlocks === 34,
+    JSON.stringify(okStr).slice(0, 80));
+}
+
 // ---- MCP server via SDK client ----
 {
   const { Client } = require('@modelcontextprotocol/sdk/client');
