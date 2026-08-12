@@ -3488,3 +3488,20 @@ session's power-flow solve rather than part of the model, and embedding it in
 the shipped artifact is precisely where it would stop being visible, so the
 build now refuses to produce index.html if any example carries it. Verified by
 planting pfInit/pfV in showcase.json and watching the build abort.
+
+## 2026-08-11 - the unscoped npm name is closed: @openemt/openemt is permanent
+
+npm support confirmed the "too similar to opener" 403 is an automated
+anti-typosquatting block that support cannot manually except, even for an
+established project. So the request path is dead, not pending: the scoped
+`@openemt/openemt` is the permanent distribution name, not a fallback.
+
+Their suggested alternative (a different unscoped name such as `openemt-cli`)
+is declined deliberately. With two bins, npx only auto-resolves the bin whose
+name matches the package's last path segment, so an unscoped alias would need a
+differently named bin and would fracture the command identity for no gain.
+
+The refusal has a silver lining worth recording: the same filter blocks anyone
+else from publishing `openemt`, so the exact name cannot be squatted or served
+as malware during a traffic spike. npm's own guard is stronger protection than
+ownership would have been.
