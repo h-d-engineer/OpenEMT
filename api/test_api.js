@@ -21,6 +21,8 @@ const path = require('path');
 const fs = require('fs');
 const { OpenEMT } = require('./core.js');
 
+const { version: PKG_VERSION } = require('../package.json');
+
 let failures = 0;
 function check(name, cond, detail) {
   if (cond) { console.log('PASS ' + name); }
@@ -560,6 +562,13 @@ function approxPct(sim, exp) { return Math.abs(sim - exp) / Math.abs(exp) * 100;
 // ---- CLI via child process ----
 {
   const root = path.resolve(__dirname, '..');
+  // --version must exist and must agree with package.json: a published CLI
+  // that cannot state its own version makes every bug report guesswork.
+  for (const flag of ['--version', '-v']) {
+    const out = execFileSync('node', [path.join('api', 'cli.js'), flag], { cwd: root, encoding: 'utf8' }).trim();
+    check('CLI ' + flag + ' prints the package version', out === PKG_VERSION,
+      'got ' + JSON.stringify(out) + ', package.json=' + PKG_VERSION);
+  }
   const cat = execFileSync('node', [path.join('api', 'cli.js'), 'catalog', '--json'], { cwd: root, encoding: 'utf8' });
   const catJ = JSON.parse(cat);
   check('CLI catalog --json 36 blocks', Array.isArray(catJ) && catJ.length === 36, 'n=' + (catJ && catJ.length));
@@ -653,6 +662,13 @@ function approxPct(sim, exp) { return Math.abs(sim - exp) / Math.abs(exp) * 100;
       await client.connect(tr);
       const tools = (await client.listTools()).tools.map(t => t.name);
       check('MCP exposes 14 tools', tools.length === 14, 'n=' + tools.length);
+      // The server used to restate its version as a literal and had already
+      // drifted: it announced 0.1.0 after the package shipped 0.1.1. Assert it
+      // against package.json so the next bump cannot silently repeat that.
+      const sv = client.getServerVersion ? client.getServerVersion() : null;
+      check('MCP announces the package version',
+        !!sv && sv.name === 'openemt' && sv.version === PKG_VERSION,
+        'server=' + JSON.stringify(sv) + ' package.json=' + PKG_VERSION);
       const lb = JSON.parse((await client.callTool({ name: 'list_blocks', arguments: {} })).content[0].text);
       check('MCP list_blocks 36', lb.length === 36, 'n=' + lb.length);
       await client.callTool({ name: 'load_example', arguments: { name: 'ieee9bus' } });

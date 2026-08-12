@@ -3549,3 +3549,27 @@ vendor files in this repo.
 Note for future sessions: three issue templates already existed. They were
 added after this session's initial survey and were briefly duplicated before
 being removed. Check `.github/ISSUE_TEMPLATE/` before creating another.
+
+## 2026-08-11 - CLI --version, and the version literal that had already drifted
+
+The published CLI could not answer `--version`, which makes every bug report
+guesswork on a tool distributed through npm. Added via commander as
+`-v, --version`, sourced from `require('../package.json')`: that resolves
+relative to the module rather than the working directory, so it is right from a
+clone and from inside `node_modules`.
+
+Writing it turned up the reason the issue mattered. `api/mcp-server.js` had the
+version as a literal `'0.1.0'` in its `Server()` handshake and had **already
+gone stale**: every MCP client had been told 0.1.0 since the package shipped
+0.1.1. Now read from the same single source. A version restated in a second
+place does not drift eventually, it drifts at the first bump.
+
+Both are guarded in `api/test_api.js` against `package.json`, CLI by invoking
+the flag and MCP through `getServerVersion()` on the handshake. Guard
+verification found a bug in the verification itself and is worth recording: the
+first attempt patched `version: VERSION` with a string replace, which matched
+the *import* line `const { version: VERSION } = require(...)` first and produced
+a syntax error, so the server died on startup and the check never ran. A guard
+that "fails" because the process crashed has not been shown to work. Re-broken
+against the full `{ name: 'openemt', version: VERSION }` and both guards report
+the mismatch by value.

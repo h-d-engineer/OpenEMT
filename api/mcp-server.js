@@ -24,6 +24,10 @@ const { Server } = require('@modelcontextprotocol/sdk/server');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { ListToolsRequestSchema, CallToolRequestSchema } = require('@modelcontextprotocol/sdk/types.js');
 const { OpenEMT } = require('./core.js');
+// Resolved relative to this module, so it is correct from a clone or from
+// inside node_modules. This was a hardcoded '0.1.0' literal and had already
+// gone stale: clients were told 0.1.0 while the package shipped 0.1.1.
+const { version: VERSION } = require('../package.json');
 
 const em = new OpenEMT();
 
@@ -239,7 +243,7 @@ async function handleCall(req) {
 
 async function main() {
   const server = new Server(
-    { name: 'openemt', version: '0.1.0' },
+    { name: 'openemt', version: VERSION },
     { capabilities: { tools: {} } },
   );
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));

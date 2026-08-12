@@ -30,9 +30,17 @@ const { Command } = require('commander');
 const fs = require('fs');
 const path = require('path');
 const { OpenEMT } = require('./core.js');
+// Single source of truth for the version. `require` resolves relative to this
+// module, not the working directory, so it finds the package root whether the
+// CLI runs from a clone or from inside node_modules. Never restate the version
+// as a literal: api/mcp-server.js did, and was still reporting 0.1.0 to every
+// client after the package shipped 0.1.1.
+const { version: VERSION } = require('../package.json');
 
 const program = new Command();
-program.name('openemt').description('OpenEMT headless solver CLI (catalog, power flow, simulation, query).');
+program.name('openemt')
+  .description('OpenEMT headless solver CLI (catalog, power flow, simulation, query).')
+  .version(VERSION, '-v, --version', 'Print the OpenEMT version and exit.');
 
 
 // pf/run/query accept either a path to a circuit file or the bare name of a
