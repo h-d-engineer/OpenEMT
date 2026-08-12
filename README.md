@@ -22,7 +22,7 @@ than a hand-maintained summary of it. All three call the same `simulate()` and
 circuit, solve it, and query results by stable block ID: the same loop an
 engineer runs in the canvas, not a wrapper bolted onto one.
 
-Maturity: **beta, v0.1.0.** The block models are averaged and simplified by
+Maturity: **beta, v0.1.1.** The block models are averaged and simplified by
 design (the concept-validation layer that runs *before* anyone opens PSCAD),
 every block is checked against an analytical or independent-solver reference,
 and every known limitation is written down. Read
@@ -515,11 +515,22 @@ SOC ramping down once it carries the load.
 ## Validation
 
 `node smoke_test.js` runs every block in canned circuits headless and checks
-the results against analytical or independent-solver references (133 checks,
+the results against analytical or independent-solver references (134 checks,
 per-block PASS/FAIL summary). [`VALIDATION.md`](VALIDATION.md) is the
 manifest: per-block checks, reference types, tolerances, and the rationale
 for each tolerance band. Every new block ships with its checks appended to
 the smoke test and a row in that manifest.
+
+**What is not verified, stated plainly.** All of those references are in-house:
+closed-form phasors, a self-contained nodal helper, and structural properties.
+**Zero of the 36 blocks have been cross-checked against a commercial or
+independently-developed EMT program**, because I do not have a licence for one.
+The [scoreboard](VALIDATION.md) triages every block by how much an external
+reference would actually settle. If you have PSCAD, PSS/E, PowerFactory or
+similar and twenty minutes, that is the single most useful thing anyone can
+contribute here: see
+[issue #9](https://github.com/h-d-engineer/OpenEMT/issues/9). A result that
+disagrees is worth more than one that agrees, and gets published either way.
 
 `node api/test_api.js` is the second suite: it guards the headless contract
 (`api/core.js`, the CLI, and the MCP server) and ties its results to the same
@@ -537,7 +548,7 @@ the final frequency lands on nominal.
 
 ## Status
 
-Version 0.1.0. Roadmap (SPEC.md section 5) complete through item 37, with one
+Version 0.1.1. Roadmap (SPEC.md section 5) complete through item 37, with one
 exception: item 9 (the per-block validation suite) stays open until an external
 reference-tool cross-check exists. The analytical and independent-solver checks
 are in place (see VALIDATION.md), but that last class is non-negotiable before
@@ -583,8 +594,12 @@ modified version. See [LICENSING.md](LICENSING.md), or enquire at
 licensing@openemt.pro.
 
 Contributions are welcome and require a signed [CLA](CLA.md); see
-[CONTRIBUTING.md](CONTRIBUTING.md). The licences cover the code, not the name:
-see [TRADEMARK.md](TRADEMARK.md).
+[CONTRIBUTING.md](CONTRIBUTING.md). There are
+[good first issues](https://github.com/h-d-engineer/OpenEMT/labels/good%20first%20issue)
+open, and the most valuable contribution needs no code at all: cross-check one
+block against a commercial tool you already have
+([#9](https://github.com/h-d-engineer/OpenEMT/issues/9)). The licences cover
+the code, not the name: see [TRADEMARK.md](TRADEMARK.md).
 
 To cite OpenEMT, use the concept DOI
 [10.5281/zenodo.21857083](https://doi.org/10.5281/zenodo.21857083), which always

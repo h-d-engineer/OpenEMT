@@ -70,7 +70,8 @@ judgement, stated so it can be argued with:
 If you have access to PSCAD, PSS/E, PowerFactory, EMTP-RV or similar, a single
 **High**-row block is the most valuable contribution available to this project.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for what to send; a CSV and the case file
-is enough.
+is enough. Progress is tracked in
+[issue #9](https://github.com/h-d-engineer/OpenEMT/issues/9).
 
 ## Harness
 
