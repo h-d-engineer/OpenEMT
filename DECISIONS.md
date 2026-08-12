@@ -3505,3 +3505,47 @@ The refusal has a silver lining worth recording: the same filter blocks anyone
 else from publishing `openemt`, so the exact name cannot be squatted or served
 as malware during a traffic spike. npm's own guard is stronger protection than
 ownership would have been.
+
+## 2026-08-11 - validation scoreboard, and the contributor funnel it feeds
+
+Two weeks of traffic showed the shape of the problem: 134 clones from 60 unique
+people, 224 views, two forks, and zero issues filed. That is not disinterest,
+it is a missing on-ramp. Nothing told an arriving engineer what was unverified
+or what they could usefully do about it.
+
+VALIDATION.md gains a **scoreboard** stating plainly that **0 of 36 blocks have
+been cross-checked against a commercial or independently-developed EMT
+program**, and triaging all 36 into High/Medium/Low by how much an external
+reference would actually settle. The ranking is a judgement (High = the
+dynamics have no closed form, so the current gate is structural or a
+steady-state fact the solver reaches by construction) and is written to be
+argued with rather than trusted. This is the substance behind the README's
+AS-IS notice: previously the gap was real but invisible, phrased only as a
+sentence in "Remaining work".
+
+Fixed an accuracy bug found while writing it: the manifest claimed every block
+in DEFS had a row, but `gfl`, `gtrip` and `zrel` had none. All three have
+passing smoke checks, so this was a documentation hole in a credibility
+document, which is the worst place for one. Rows added from what the checks
+actually assert.
+
+The scoreboard is now **enforced, not remembered**: a new `docs` gate in
+smoke_test.js parses the rendered table and fails if any DEFS type is missing,
+duplicated across tiers, or listed but nonexistent. Adding block 37 without a
+row is the obvious way this table would rot. Verified by breaking it three
+ways (removed `mov`, listed `gfm` twice, invented `flux_capacitor`); each is
+reported by name. Getting DEFS out to the guard needed one line: `const DEFS`
+lives inside the `eval(pre+blocks+solver)` scope and a direct eval leaks `var`
+and function declarations but not const/let, so the eval string now ends with
+an explicit `global.__DEFS=DEFS`.
+
+CONTRIBUTING.md gains the cross-check path VALIDATION.md points at, and there
+is a **Block validation report** issue template for it. Both say the same two
+things deliberately: a disagreement is worth more than an agreement and will be
+published either way, and contributors must not upload anything their licence
+or employer forbids, because the numbers alone are useful and we do not want
+vendor files in this repo.
+
+Note for future sessions: three issue templates already existed. They were
+added after this session's initial survey and were briefly duplicated before
+being removed. Check `.github/ISSUE_TEMPLATE/` before creating another.

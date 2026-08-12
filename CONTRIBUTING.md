@@ -38,6 +38,39 @@ validation. Several traps in this codebase produced results that looked
 entirely reasonable and were wrong; the known ones are listed in
 [DECISIONS.md](DECISIONS.md) and in the repository guidance.
 
+## Cross-checking a block against a commercial tool
+
+**This is the most valuable contribution available to the project right now,
+and it does not require writing any code.**
+
+Every block is checked, but all the references are in-house: closed-form
+phasors, a self-contained nodal helper, and structural properties. Zero blocks
+have been cross-checked against a commercial or independently-developed EMT
+program, because the maintainer does not have a licence for one. That gap is
+the reason the README carries an AS-IS notice, and it is the last piece of
+SPEC section 5 item 9.
+
+If you have PSCAD, PSS/E, PowerFactory, EMTP-RV or similar at work or at
+university, and twenty minutes:
+
+1. Pick a block from the **High** row of the scoreboard in
+   [VALIDATION.md](VALIDATION.md). Those are the ones where an external
+   reference would actually tell us something new.
+2. Build the equivalent case in your tool. Keep it small; one disturbance is
+   plenty.
+3. Open an issue with the **Block validation report** template and attach the
+   waveform CSV, your parameters, and the OpenEMT case file if you built one.
+
+It does not need to be exhaustive or polished. One trace and the parameters is
+a real result.
+
+Two things worth saying plainly. **A disagreement is more useful than an
+agreement**, and it will be published either way: the purpose of that file is
+to be accurate about what is known, not flattering. And **do not send anything
+your licence or employer does not permit you to share** — a description of the
+model and the numbers is useful on its own, and we do not want your vendor's
+files.
+
 ## Record why, not just what
 
 Significant design decisions get a dated entry in

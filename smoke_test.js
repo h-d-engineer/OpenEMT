@@ -59,7 +59,12 @@ var S={blocks:[
  {a:[1,0],b:[5,0]},{a:[4,1],b:[6,0]},{a:[7,0],b:[3,1]}
 ]};
 `;
-eval(pre+blocks+solver);
+// `const DEFS` in blocks.js stays inside this eval's own scope (a direct eval
+// leaks `var` and function declarations to the enclosing scope, but not
+// const/let), so hand it out explicitly for the doc-coverage guard at the
+// bottom of this file. Function declarations from solver.js still arrive the
+// usual way and need no help.
+eval(pre+blocks+solver+'\nglobal.__DEFS=DEFS;');
 runEMT();
 console.log('status:', els_stubs.stat.textContent);
 const [t,probes,vp,els,ie,nph]=plotArgs;
@@ -4936,6 +4941,33 @@ console.log('gfm status:', els_stubs.stat.textContent);
   }
  }
  S.vconv='ph'; // global, leaks into anything that runs after this (CLAUDE.md)
+}
+
+// ---- VALIDATION.md scoreboard coverage ----
+// The scoreboard is the public answer to "how much of this is verified, and
+// where are the holes", so a block that never reaches it is worse than an
+// undocumented block: the table silently implies the catalog is fully triaged.
+// Adding block 37 without a row is the obvious way that happens, so assert it
+// rather than trusting a future memory. Text-level check on purpose: it is the
+// rendered table readers actually see that must stay complete.
+{
+ const fs=require('fs'), path=require('path');
+ const md=fs.readFileSync(path.join(__dirname,'VALIDATION.md'),'utf8');
+ const scb=(md.split('## Scoreboard')[1]||'').split('## Harness')[0];
+ const tiers={};
+ ['High','Medium','Low'].forEach(t=>{
+  const m=new RegExp('\\*\\*'+t+'\\*\\*\\s*\\|([^|]*)\\|').exec(scb);
+  tiers[t]=new Set(m?(m[1].match(/`([a-z0-9_]+)`/g)||[]).map(s=>s.replace(/`/g,'')):[]);
+ });
+ const listed=new Set([...tiers.High,...tiers.Medium,...tiers.Low]);
+ const types=Object.keys(global.__DEFS);
+ const missing=types.filter(t=>!listed.has(t));
+ const unknown=[...listed].filter(t=>!types.includes(t));
+ const dupes=[...listed].filter(t=>['High','Medium','Low'].filter(k=>tiers[k].has(t)).length>1);
+ const ok=!missing.length&&!unknown.length&&!dupes.length;
+ if(!ok) console.log('  scoreboard: missing='+JSON.stringify(missing)+
+   ' unknown='+JSON.stringify(unknown)+' duplicated='+JSON.stringify(dupes));
+ record('docs','VALIDATION.md scoreboard triages every DEFS block exactly once', ok);
 }
 
 summary();

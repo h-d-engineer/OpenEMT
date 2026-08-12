@@ -1,0 +1,75 @@
+name: Block validation report
+description: You cross-checked an OpenEMT block against another EMT tool. Agreement or disagreement, both are wanted.
+title: "[validation] <block> vs <tool>"
+labels: ["validation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. This is the most valuable contribution the project can
+        receive: zero blocks have been cross-checked against an external tool,
+        which is why the README carries an AS-IS notice.
+
+        **A disagreement is more useful than an agreement**, and results are
+        published either way. Partial results are welcome; one trace and the
+        parameters is a real result.
+
+        Please do not upload anything your licence or employer does not permit
+        you to share. The numbers and a description of your model are useful on
+        their own; we do not want your vendor's files.
+  - type: input
+    id: block
+    attributes:
+      label: Block
+      description: The OpenEMT block type, as listed in the VALIDATION.md scoreboard.
+      placeholder: xfmr
+    validations:
+      required: true
+  - type: input
+    id: tool
+    attributes:
+      label: Reference tool and version
+      placeholder: PSCAD 5.0.2
+    validations:
+      required: true
+  - type: dropdown
+    id: verdict
+    attributes:
+      label: Verdict
+      options:
+        - Agrees within tolerance
+        - Disagrees, small but real
+        - Disagrees materially
+        - Inconclusive / could not set up an equivalent case
+    validations:
+      required: true
+  - type: textarea
+    id: quantities
+    attributes:
+      label: What you compared, and the numbers
+      description: Which quantity, at what instant or in what window, and the two values with the percentage difference.
+      placeholder: |
+        Peak inrush current, first cycle after energisation at voltage zero.
+        OpenEMT 412 A, PSCAD 447 A, 7.8% low.
+        Steady-state magnetising current agrees to 0.9%.
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Case setup
+      description: Parameters on both sides, time step, and the disturbance. Enough that someone can rebuild it.
+    validations:
+      required: true
+  - type: textarea
+    id: data
+    attributes:
+      label: Data
+      description: Attach the waveform CSV and, if you built one, the OpenEMT circuit JSON. Drag files into this box.
+  - type: checkboxes
+    id: rights
+    attributes:
+      label: Sharing
+      options:
+        - label: What I am attaching is mine to share, and contains no vendor-licensed files.
+          required: true

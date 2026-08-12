@@ -36,8 +36,41 @@ independent of the code under test.
   `tests/fixtures/` or `examples/`. Catches wiring typos and cross-block
   regressions the inline tests cannot, but its "reference" is the
   hand-verified steady state of that file, not an external tool.
-- **reference-tool** (PSCAD-Free or equivalent): not yet present. This is the
-  one remaining gap for item 9 (see "Remaining work").
+- **reference-tool** (a commercial or independently-developed EMT program):
+  **not yet present for any block.** This is the one remaining gap for item 9
+  (see the scoreboard below, and "Remaining work").
+
+## Scoreboard
+
+**0 of 36 block types have been cross-checked against a commercial or
+independently-developed EMT program.** Every block is checked, and the harness
+gates on those checks, but the references are all in-house: closed-form phasors,
+a self-contained nodal helper, and structural properties. That is why the README
+carries an AS-IS notice, and it is the honest state of the project.
+
+Not every block benefits equally from an external check, so the table ranks them
+by **cross-check priority**: how much a commercial reference would tell you that
+the current check does not already establish. The ranking is an engineering
+judgement, stated so it can be argued with:
+
+- **High** — the block's *dynamics* have no closed form, so the existing gate is
+  either a structural property or a steady-state target that the solver reaches
+  by construction. An external tool would genuinely test the trajectory.
+- **Medium** — a closed form pins the steady state, but the transient path to it
+  is unverified against anything outside this repo.
+- **Low** — linear circuitry against an exact phasor, or a node identity. A
+  reference tool would agree by construction; effort here buys little.
+
+| Priority | Blocks | What an external reference would actually settle |
+|---|---|---|
+| **High** | `xfmr` (saturation), `mov`, `gfm`, `gfl`, `syncgen`, `im`, `brk`, `zrel`, `gtrip`, `hvdc`, `wt4`, `fdline` | Inrush and clamp trajectories, converter-control and limiter behaviour under disturbance, machine swing and start transients, arc-free current-zero clearing, relay pickup timing on a real swing, and frequency-dependent line response. These are where independent EMT programs most often disagree with each other. |
+| **Medium** | `pq`, `zip`, `cpl`, `svc`, `vsw`, `relay`, `pfc`, `batt`, `dcdc`, `pv`, `xfmr3`, `xfmr3w`, `tline` | Steady state is pinned analytically; the approach path, control-loop damping, and switching instants are not. Constant-power behaviour behind an impedance (`pq`, `zip`, `cpl`) is the known-fragile corner, see the CLAUDE.md traps. |
+| **Low** | `src`, `line`, `cap`, `rlc`, `rlcp`, `tap`, `fault`, `bus`, `scale`, `gnd`, `probe` | Linear or structural. Already checked against an exact phasor or a node identity, several at 1e-9 or exact. |
+
+If you have access to PSCAD, PSS/E, PowerFactory, EMTP-RV or similar, a single
+**High**-row block is the most valuable contribution available to this project.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for what to send; a CSV and the case file
+is enough.
 
 ## Harness
 
@@ -96,6 +129,10 @@ reference type from the list above.
 | `scale` | current-scaling: I_net = N*I_local (integer + non-integer N) | analytical | 1% |
 | `mov` | sub-knee leakage + clamp divider (V, I) | analytical | 1%; 2% |
 | `vsw` | sag closes bank at predicted V; healthy feeder holds off | analytical | 2% |
+| `gfl` | P/Q setpoint at unity, leading and lagging PF; current limit at 1.2x through a fault and recovery; voltage-floor ride-through with no I=P/V runaway; weak-bus stability at SCR~3; PLL tracks a network off f0 | analytical / self-consistency | P/Q <5%; limiter <10%; f <0.1 Hz |
+| `gtrip` | PLL bus-frequency accuracy at 60/61/58.5 Hz and disarmed hold; 59 definite-time trip on a solver-driven step; 81U on an exact governor-droop slope, trips above and holds below; latch holds after the bus recovers; 59 hysteresis resets past dropout; Vblk holds the 81 timers on a collapsed bus; two-plant cascade trips B from its own measurement only; reported trip cause | analytical / self-consistency | trip window 300-340 ms; <0.01 A after latch |
+| `zrel` | apparent-Z accuracy; mho zone-1 trip; out-of-reach hold; start-up hold; 1-ph mode rejected with a validation error | analytical / self-consistency | zone boundary, trip vs hold |
+| `zrel` (out-of-step) | classical double blinder: way-out and way-in both trip on a real slip; steady load flow with the element armed holds; a fault stepping inside the blinders is not called a swing | self-consistency | binary trip/hold |
 | `gnd` | grounded node pins to 0 V | self-consistency | <1e-6 V |
 | `probe` | two probes on same node agree, no loading | self-consistency | <1e-9 V |
 | `powerflow` | converge + machine init at nonzero angle + flat-start swing < cold; series relay stamped (downstream bus connected); unstampable series block rejected | analytical / self-consistency | swing <30 mHz; 0.05 Hz; 0.5% |
@@ -164,13 +201,22 @@ signal for any future loosening:
 
 ## Remaining work
 
-The **reference-tool** class is not yet present. The analytical and
-independent-solver references cover every block, but for a handful of blocks
-no closed form exists and the analytical check is the same steady-state fact
-the solver converges to: the saturable-transformer inrush transient, the MOV
-clamp dynamics, and the GFM limiter's EMF-backoff trajectory are the
-candidates for a PSCAD-Free (or equivalent) cross-check. That external
-reference is the last piece before item 9 can be struck from SPEC §5.
+The **reference-tool** class is not yet present for any block, which is the
+last piece before item 9 can be struck from SPEC §5. The scoreboard above ranks
+where it would matter most; the three sharpest cases are the
+saturable-transformer inrush transient, the MOV clamp dynamics, and the GFM
+limiter's EMF-backoff trajectory, because for each of those no closed form
+exists and the current analytical check is the same steady-state fact the
+solver converges to.
+
+**How to contribute one.** Pick a block from the High row, build the equivalent
+case in your tool, and send the waveform CSV plus enough of the case to
+reproduce it. It does not need to be exhaustive: one disturbance, one trace,
+and the parameters is a real result. Open an issue using the
+*Block validation report* template. A cross-check that **disagrees** with
+OpenEMT is more valuable than one that agrees, and will be published either
+way: the point of this file is to be accurate about what is known, not
+flattering.
 
 The independent-solver helper (`tests/reference/phasor.js`) currently backs
 two checks (pi-line, demo cross-check). Pointing more multi-node checks at
