@@ -1389,10 +1389,36 @@ function showProps() {
   if (b.type === 'gtrip') sH += '<span class="hint">Latching generation-trip relay: a SENSOR (no stamp, no injection) that watches Vrms and bus frequency at its node and trips a target breaker by block ID. Four definite-time elements with pickup/dropout hysteresis: 59 (overvoltage), 27 (undervoltage), 81O (overfrequency), 81U (underfrequency). Each element has its own dwell timer; the first to time out latches the trip permanently (no reclose within a run). The 81 elements require 3-phase AC (the SRF-PLL measures frequency from three phases) and are held at zero while the PLL is not locked or Vrms is below Vblk. Measured frequency comes from the integrator state, not the VCO output, so transients do not false-trip. Aux signal reports bus frequency.</span>';
   if (b.type === 'gnd') sH += '<span class="hint">Ground reference: pins its node to 0 V (the solver\'s datum). Every circuit needs at least one; star-ground all returns here. One terminal, no params.</span>';
   if (b.type === 'probe') sH += '<span class="hint">Voltage probe: measures its node\'s voltage without loading it (no current draw, ideal). Add one per node you want to plot; pick the signal by block ID. No params.</span>';
+  sH += validationNote(b.type);
   sH += sciencePanel(b);
   if (hasVconv) sH += '<span class="hint">Voltage convention: <b>' + VCONV_TAG() + '</b> (' + (S.vconv === 'll' ? 'line-to-line RMS; the solver divides by &#8730;3 in 3-ph to recover per-phase. In 1-ph LL = phase' : 'phase RMS (legacy); LL entry is available via the V: PH/LL selector in the top bar') + '). Tagged params in the left rail read in this convention. Toggle it in the top bar (V: PH/LL); switching CONVERTS already-entered tagged values by &#8730;3 so the physical voltage is preserved (undoable).</span>';
   emt.classList.toggle('nosci', !sH);
   se.innerHTML = sH;
+}
+
+// What this block's numbers have actually been checked against, shown where the
+// decision to trust them gets made rather than only in VALIDATION.md. The tier
+// comes from VALIDATION_TIERS, parsed from that file's scoreboard at build time,
+// so the two cannot drift.
+//
+// Wording follows the CONTRIBUTING.md accuracy rule: never "validated" as a
+// yes/no, always what it was checked against. The line about no commercial
+// cross-check is shown for every block because it is true for every block; if
+// that ever stops being true, this is one of the places that must change.
+function validationNote(type) {
+  const tier = VALIDATION_TIERS[type];
+  if (!tier) return '';
+  const what = {
+    High: 'checked against analytical or structural references. Its dynamics have no closed form, '
+      + 'so the existing checks pin the steady state or a structural property rather than the trajectory',
+    Medium: 'steady state pinned against a closed-form result; the transient path to it, the control-loop '
+      + 'damping and the switching instants are not independently checked',
+    Low: 'checked against an exact phasor or a node identity, several to within 1e-9',
+  }[tier];
+  return '<span class="hint"><b>Verification:</b> ' + tier + ' cross-check priority, ' + what
+    + '. No block in OpenEMT has been cross-checked against a commercial EMT program yet, which is why '
+    + 'results are not certified for engineering decisions. See VALIDATION.md for this block\'s checks '
+    + 'and tolerances.</span>';
 }
 
 // ---- Science / formula panel (educational layer, SPEC §5). One block at a

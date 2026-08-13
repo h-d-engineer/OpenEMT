@@ -62,12 +62,36 @@ if polluted:
           'part of the model, and the EMT run starts from them.')
 examples_json = json.dumps(examples, separators=(',', ':'), sort_keys=True)
 
+# Per-block verification tier, parsed out of the VALIDATION.md scoreboard so the
+# app and the document cannot disagree. Deliberately NOT a second copy of the
+# list in src/: a hand-maintained duplicate of an accuracy claim is exactly the
+# kind of thing that goes stale silently, and a stale accuracy claim is worse
+# than none because someone relies on it. smoke_test.js separately asserts the
+# scoreboard covers every DEFS type exactly once; this only has to fail loudly
+# if the section it parses stops being there at all.
+import re
+_val = (root / 'VALIDATION.md').read_text(encoding='utf-8')
+_scb = _val.split('## Scoreboard')[1].split('## Harness')[0] if '## Scoreboard' in _val else ''
+tiers = {}
+for _tier in ('High', 'Medium', 'Low'):
+    _m = re.search(r'\*\*' + _tier + r'\*\*\s*\|([^|]*)\|', _scb)
+    if _m:
+        for _t in re.findall(r'`([a-z0-9_]+)`', _m.group(1)):
+            tiers[_t] = _tier
+if len(tiers) < 20 or not all(t in tiers.values() for t in ('High', 'Medium', 'Low')):
+    raise SystemExit(
+        f'BUILD ABORTED: could not parse the VALIDATION.md scoreboard (got {len(tiers)} blocks).\n'
+        'The app shows each block\'s verification tier from that table. If the table moved or\n'
+        'changed shape, fix this parser rather than shipping an app with no accuracy status.')
+tiers_json = json.dumps(tiers, separators=(',', ':'), sort_keys=True)
+
 out = (shell
        .replace('/*__BLOCKS_JS__*/', blocks_js)
        .replace('/*__SOLVER_JS__*/', solver_js)
        .replace('/*__IMPORT_JS__*/', import_js)
        .replace('/*__UI_JS__*/', (src / 'ui.js').read_text(encoding='utf-8'))
        .replace('/*__EXAMPLES_JSON__*/', examples_json)
+       .replace('/*__VALIDATION_TIERS__*/', tiers_json)
        .replace('/*__WORKER_SRC__*/', json.dumps(worker_src)))
 # newline='\n' is deliberate: write_text() defaults to text mode, which on
 # Windows translates '\n' to '\r\n'. That made every build emit CRLF while the
