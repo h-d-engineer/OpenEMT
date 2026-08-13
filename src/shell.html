@@ -36,6 +36,11 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
    a few px of descender space inside .cnvwrap that offset the height grip from
    the canvas's real bottom edge. */
 #cnv{background:var(--sfc1);border:1px solid var(--bd);border-radius:12px;width:100%;height:460px;display:block;touch-action:none;cursor:default;user-select:none;-webkit-user-select:none}
+/* touch-action is not inherited, so every block/wire/label inside the SVG
+   computes to `auto`. iOS Safari does not reliably apply the ancestor's `none`
+   to a touch that starts on such a child, and hands the gesture to the page
+   mid-drag. Setting it on the subtree removes the ambiguity. */
+#cnv *{touch-action:none}
 .cnvwrap:fullscreen{background:var(--sfc1)}
 /* !important: the resize grip writes an inline height on #cnv, which would
    otherwise beat this rule and letterbox the fullscreen canvas. */

@@ -919,6 +919,23 @@ function blockOverlapsRect(b, rx0, ry0, rx1, ry1) {
   const d = getDims(b);
   return b.x < rx1 && b.x + d.w > rx0 && b.y < ry1 && b.y + d.h > ry0;
 }
+// Coalesce drag repaints to one per animation frame. pointermove fires up to
+// 120 Hz on a touch screen, and a full re-render costs ~1.3 ms at 19 blocks but
+// ~8.4 ms at 147 (measured), several times that on phone silicon. Rendering
+// once per event therefore guarantees the handler falls behind the finger on a
+// large circuit, which is the size-dependent stutter reported in #15: smooth on
+// central_ups, bad on ieee39bus. One frame is the most the display can show
+// anyway, so the extra renders bought nothing.
+let dragRaf = 0;
+function renderDrag() {
+  if (dragRaf) return;
+  dragRaf = requestAnimationFrame(() => { dragRaf = 0; render(); });
+}
+function flushDragRender() {
+  if (dragRaf) { cancelAnimationFrame(dragRaf); dragRaf = 0; }
+  render();
+}
+
 cnv.addEventListener('pointerdown', e => {
   if (e.button !== 0) return; // ignore right/middle-click: don't start drags or wire terminals; the browser context menu is suppressed separately
   const t = e.target; const pt = svgPt(e);
@@ -976,15 +993,23 @@ cnv.addEventListener('pointermove', e => {
     view.x = drag.vx - (e.clientX - drag.sx) * view.w / r.width;
     view.y = drag.vy - (e.clientY - drag.sy) * view.h / r.height;
   }
-  render();
+  renderDrag();
 });
-cnv.addEventListener('pointerup', () => {
+// A touch drag must not be allowed to turn into a page scroll halfway through.
+// #cnv sets touch-action:none, but that property is not inherited and every SVG
+// child computes to `auto`; iOS Safari does not reliably honour the ancestor's
+// value for a touch that starts on a child, so the browser can steal the
+// gesture mid-drag. Two defences: `#cnv *` gets touch-action:none in
+// shell.html, and any touchmove during an active drag is cancelled here. The
+// listener must be non-passive or preventDefault is ignored.
+cnv.addEventListener('touchmove', e => { if (drag) e.preventDefault(); }, { passive: false });
+function endCanvasDrag() {
   if (drag && drag.type === 'rubber') {
     const rx0 = Math.min(drag.x0, drag.x1), rx1 = Math.max(drag.x0, drag.x1);
     const ry0 = Math.min(drag.y0, drag.y1), ry1 = Math.max(drag.y0, drag.y1);
     const hit = S.blocks.filter(b => blockOverlapsRect(b, rx0, ry0, rx1, ry1)).map(b => b.id);
     hit.forEach(id => { if (!S.sel.includes(id)) S.sel.push(id); });
-    drag = null; render(); showProps(); return;
+    drag = null; flushDragRender(); showProps(); return;
   }
   if (drag && drag.type === 'block') {
     // only commit a history entry if the pointerdown->pointerup actually
@@ -997,7 +1022,15 @@ cnv.addEventListener('pointerup', () => {
     if (moved) pushHistory(drag.preSnap);
   }
   drag = null;
-});
+  flushDragRender(); // paint the final position; the last move's frame may still be pending
+}
+cnv.addEventListener('pointerup', endCanvasDrag);
+// Without this the canvas was the only draggable surface in the app with no
+// pointercancel handler (the plot canvases and both resize grips have one). If
+// the browser claimed the gesture, `drag` was never cleared: the app stayed
+// stuck mid-drag while the page scrolled under the still-pressed finger, which
+// is the "moves a little, then the whole page moves" half of #15.
+cnv.addEventListener('pointercancel', endCanvasDrag);
 cnv.addEventListener('wheel', e => {
   e.preventDefault();
   zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, svgPt(e));

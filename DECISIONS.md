@@ -3573,3 +3573,39 @@ a syntax error, so the server died on startup and the check never ran. A guard
 that "fails" because the process crashed has not been shown to work. Re-broken
 against the full `{ name: 'openemt', version: VERSION }` and both guards report
 the mismatch by value.
+
+## 2026-08-12 - canvas touch drag: frame-coalesced repaints, and the missing pointercancel
+
+Reported from a phone (#15): dragging the circuit stutters, moves a little, then
+the page starts scrolling under a finger that never lifted. Worse on ieee39bus
+than on central_ups. Two independent causes, and the size dependence in the
+report distinguished them.
+
+**Stutter.** `pointermove` called `render()` directly, once per event. A full
+re-render measured 1.3 ms at 19 blocks and 8.4 ms at 147 on a desktop, so 40
+synthesised moves cost 345 ms of handler time; on phone silicon that is roughly
+30 fps for ieee39bus against ~190 for central_ups, which is exactly the reported
+difference. Repaints are now coalesced to one per animation frame, taking the
+same 40 moves from 41 renders / 345 ms to 1 render / 4.4 ms. A frame is all the
+display can show, so the other 40 renders bought nothing.
+
+**The page stealing the gesture.** The canvas was the only draggable surface in
+the app with no `pointercancel` handler; the plot canvases and both resize grips
+already had one. When the browser claims a touch gesture it fires
+`pointercancel`, so `drag` was never cleared and the app sat stuck mid-drag
+while the page scrolled. `pointerup` and `pointercancel` now share one
+`endCanvasDrag()`.
+
+Why the browser claimed it at all, despite `#cnv{touch-action:none}`:
+touch-action is **not inherited**, so every block, wire and label inside the SVG
+computes to `auto`, and iOS Safari does not reliably apply the ancestor's value
+to a touch starting on a child. Two defences, since the platform behaviour is
+not something we control: `#cnv *{touch-action:none}` in shell.html, and a
+non-passive `touchmove` listener that calls preventDefault **only while a drag
+is active**, so ordinary page scrolling over the canvas still works when idle.
+Verified both: prevented during a drag, not prevented when idle.
+
+One verification trap worth recording: an element reference captured before the
+drag test reported `matches('#cnv *') === false`, which looked like the CSS
+selector failing. It was a detached node, because `render()` rebuilds the SVG
+children. Re-query after any render before asserting on DOM identity.
