@@ -3609,3 +3609,38 @@ One verification trap worth recording: an element reference captured before the
 drag test reported `matches('#cnv *') === false`, which looked like the CSS
 selector failing. It was a detached node, because `render()` rebuilds the SVG
 children. Re-query after any render before asserting on DOM identity.
+
+## 2026-08-12 - block verification status in the UI, and a second reference for `fault`
+
+Two things landed together because they are the same idea at different layers.
+
+**In the app.** Selecting a block now shows what its numbers have been checked
+against, in the science rail. The tier is parsed out of the VALIDATION.md
+scoreboard by build.py and embedded as `VALIDATION_TIERS`, following the
+examples-embedding precedent, rather than restated in `src/`. A hand-maintained
+duplicate of an accuracy claim is precisely the thing that rots unnoticed, and a
+stale accuracy claim is worse than none because someone acts on it. build.py
+aborts if that section stops parsing, so a shape change cannot ship an app with
+no accuracy status. Wording follows the CONTRIBUTING.md rule: never "validated"
+as a yes/no, and every block carries the line that no commercial cross-check
+exists yet.
+
+**In the suite.** `fault` gained an independent 2-node nodal reference next to
+its closed form. The value is not that both agree; it is that they fail
+differently. The closed form needs two hand reductions (`Rs+Rl` in series,
+`Rf||R` in parallel) to collapse to one equation, while the nodal solve keeps
+four separate branches and does neither. Breaking only the parallel reduction
+sends the closed form to 366.72 V while the nodal reference holds 17.17 V and
+still matches the simulation to 0.00%: the error is localised to the algebra
+rather than the solver. With a single reference, a disagreement between sim and
+formula cannot be attributed to either. That is the argument for the
+independent-solver class generally, and this case is now written up in
+VALIDATION.md as the pattern to copy.
+
+Also recorded, because it cost time twice in one session: when breaking a guard
+to prove it works, verify the break actually took. A rename to
+`## Scoreboard-renamed` still matched `'## Scoreboard'` as a substring and built
+happily, and earlier a `version: VERSION` replace hit the import line first and
+produced a syntax error, so the process died instead of reporting a mismatch. A
+guard that "fails" because something crashed, or that never fails because the
+break was a no-op, has not been shown to work.
