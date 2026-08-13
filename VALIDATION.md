@@ -124,7 +124,7 @@ reference type from the list above.
 | `dcdc` | CV mode (Vref, out/in power balance); CC mode (I0, V=I0*R, balance) | analytical | 2% |
 | `pv` | I-V curve datasheet points + peak near Vmpp; MPPT convergence; irradiance scaling | analytical | 1%; 3% |
 | `cpl` | DC constant-power load: I=P/V + battery power balance | analytical | 2% |
-| `fault` | fault-on divider + recovery | analytical | 2%; 5% |
+| `fault` | fault-on divider + recovery; fault-on \|V\| against an independent 2-node nodal solve that performs neither the series (Rs+Rl) nor the parallel (Rf\|\|R) hand reduction the closed form needs | analytical / independent-solver | 2%; 5%; nodal <2% vs sim, <0.1% vs closed form |
 | `bus` | multi-wire junction == direct wiring; auto-monitor meta + signal == probe; single-tap anchor | analytical / self-consistency | 0.01%; 1e-9 V |
 | `svc` | droop line + lift + SVC/STATCOM ceiling | analytical | 1%; 0.5% |
 | `scale` | current-scaling: I_net = N*I_local (integer + non-integer N) | analytical | 1% |
@@ -220,6 +220,16 @@ way: the point of this file is to be accurate about what is known, not
 flattering.
 
 The independent-solver helper (`tests/reference/phasor.js`) currently backs
-two checks (pi-line, demo cross-check). Pointing more multi-node checks at
-it, instead of their hand-rolled closed forms, is incremental hardening, not
-a gap.
+three checks (pi-line, demo cross-check, and the fault-on divider). Pointing
+more multi-node checks at it, alongside their hand-rolled closed forms, is
+incremental hardening, not a gap.
+
+The `fault` case shows what the extra reference buys, and is the pattern to
+copy. Its closed form needs two hand reductions to collapse the circuit to one
+equation; the nodal solve keeps the source resistance, line, load and fault as
+four separate branches and does neither. Deliberately breaking only the
+parallel reduction sends the closed form to 366.72 V while the nodal reference
+stays at 17.17 V and still matches the simulation to 0.00%, so the failure is
+localised to the algebra rather than the solver. A single reference cannot make
+that distinction: when sim and closed form disagree, it cannot say which is
+wrong.

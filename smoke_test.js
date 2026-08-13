@@ -293,9 +293,31 @@ console.log('fault status:', els_stubs.stat.textContent);
  const exp5=277*Math.SQRT2*Zsh/Math.hypot(Rs+Rl+Zsh,w5*L5);
  const errF=Math.abs(vFlt-exp5)/exp5*100;
  console.log('fault-on |V| sim:',vFlt.toFixed(2),'V, analytical:',exp5.toFixed(2),'V, error:',errF.toFixed(2)+'%',errF<2?'PASS':'FAIL');
+ // Second, independent reference for the same instant (SPEC §5 item 9: the
+ // independent-solver class is the strongest one short of an external tool).
+ // The closed form above needs two hand reductions to get to one equation, the
+ // series sum Rs+Rl and the parallel Rf||R. The nodal solve does neither: the
+ // source resistance, the line, the load and the fault are four separate
+ // branches across two unknown nodes, so agreement means the reductions were
+ // right AND the companion model is right, which the single formula alone
+ // cannot separate.
+ const PHf=require('./tests/reference/phasor.js');
+ const VsPk=277*Math.SQRT2;
+ const Vf=PHf.nodalSolve(2, PHf.c(0,0),
+  { 0: PHf.c(VsPk/Rs, 0) },                          // Norton form of the source
+  [ {from:-1,to:0,y:PHf.c(1/Rs,0)},                  // source Rs, node A to ground
+    {from:0,to:1,y:PHf.cinv(PHf.c(Rl,w5*L5))},       // line R+jwL, A to B
+    {from:-1,to:1,y:PHf.c(1/R,0)},                   // load R, B to ground
+    {from:-1,to:1,y:PHf.c(1/Rf,0)} ]);               // fault Rf, B to ground
+ const vNodal=PHf.cabs(Vf[1]);
+ const errN=Math.abs(vFlt-vNodal)/vNodal*100;
+ const errAN=Math.abs(exp5-vNodal)/vNodal*100;
+ console.log('fault-on |V| independent nodal:',vNodal.toFixed(2),'V; sim error:',errN.toFixed(2)+'%',
+   '; closed form vs nodal:',errAN.toFixed(3)+'%',(errN<2&&errAN<0.1)?'PASS':'FAIL');
  const errR=Math.abs(vRec-vPre)/vPre*100;
  console.log('recovery |V|:',vRec.toFixed(1),'V vs pre-fault',vPre.toFixed(1),'V, diff:',errR.toFixed(2)+'%',errR<5?'PASS':'FAIL');
  record('fault','fault-on divider + recovery', !(errF>=2||errR>=5));
+ record('fault','fault-on |V| vs independent 2-node nodal solve', errN<2&&errAN<0.1);
 }
 
 // ---- coupled line check: balanced load -> positive-sequence impedance Z1 = (Zs-Zm) ----
