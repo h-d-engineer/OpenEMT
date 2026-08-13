@@ -268,6 +268,7 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
       title="Open a shipped example circuit. Nothing to download: they are built into this file.">
       <option value="">Examples&#8230;</option>
     </select>
+    <button onclick="copyCaseLink()" title="Copy a shareable link to this case. Shipped examples only: an arbitrary circuit does not fit in a URL, so use Save for those.">&#128279; Link</button>
     <button onclick="document.getElementById('loadfile').click()">Load</button>
     <input type="file" id="loadfile" accept=".json,application/json" style="display:none"
       onchange="if(this.files[0])loadCircuit(this.files[0]);this.value=''">

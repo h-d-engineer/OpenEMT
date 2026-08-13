@@ -268,6 +268,7 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
       title="Open a shipped example circuit. Nothing to download: they are built into this file.">
       <option value="">Examples&#8230;</option>
     </select>
+    <button onclick="copyCaseLink()" title="Copy a shareable link to this case. Shipped examples only: an arbitrary circuit does not fit in a URL, so use Save for those.">&#128279; Link</button>
     <button onclick="document.getElementById('loadfile').click()">Load</button>
     <input type="file" id="loadfile" accept=".json,application/json" style="display:none"
       onchange="if(this.files[0])loadCircuit(this.files[0]);this.value=''">
@@ -11493,6 +11494,11 @@ function loadCircuit(file) {
 
 // ---- shipped examples (embedded by build.py as EXAMPLES) ----
 
+// Name of the shipped example currently on the canvas, or null when the
+// circuit is anything else (drawn by hand, loaded from disk, imported, edited).
+// Only a non-null value can be turned into a shareable ?example= link.
+let loadedExample = null;
+
 // Load one by name, the same commit path the Load button uses. The deep copy is
 // not optional: applyCircuit() backfills params into the blocks it is given and
 // then keeps the arrays as S.blocks/S.wires, so handing it the embedded object
@@ -11505,6 +11511,7 @@ function loadExampleByName(name) {
   if (!d) { stat.textContent = 'No such example: ' + name + '.'; return false; }
   const res = applyCircuit(JSON.parse(JSON.stringify(d)), name + '.json');
   if (res.err) { stat.textContent = 'Could not open ' + name + ': ' + res.err; return false; }
+  loadedExample = name; // after applyCircuit: its touchModel() clears this
   fitView();
   render();
   stat.textContent = 'Opened example ' + name + ': ' + S.blocks.length + ' blocks, '
@@ -11513,6 +11520,34 @@ function loadExampleByName(name) {
       + document.getElementById('dtus').value + ' µs.' : '')
     + (res.dropped ? ' ' + res.dropped + ' saved plot signal(s) dropped.' : '');
   return true;
+}
+
+// Share the current case as a ?example= URL. Only shipped examples can be
+// linked: the app deliberately has no way to put an arbitrary circuit in a URL
+// (ieee39bus alone is 46 kB, far past any practical URL length, see
+// DECISIONS.md 2026-08-09), so for anything else this says so plainly instead
+// of handing over a link that would silently open a different circuit on the
+// recipient's screen.
+function copyCaseLink() {
+  const stat = document.getElementById('stat');
+  if (!loadedExample) {
+    stat.textContent = 'Only the shipped examples have a shareable link, and this circuit is not one '
+      + '(or has been edited since it was opened). Use Save to send the .json file instead.';
+    return;
+  }
+  const pf = !!(document.getElementById('pfinit') || {}).checked;
+  const url = location.origin + location.pathname
+    + '?example=' + encodeURIComponent(loadedExample) + (pf ? '&pf=1' : '') + '&run=1';
+  const done = () => { stat.textContent = 'Link copied: ' + url; };
+  // The clipboard API needs a secure context, which file:// is not. Falling
+  // back to printing the URL keeps the feature usable for the offline
+  // single-file case rather than failing silently.
+  const fallback = () => { stat.textContent = 'Copy this link: ' + url; };
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(done, fallback);
+    } else fallback();
+  } catch (e) { fallback(); }
 }
 
 function buildExamplesMenu() {
@@ -11597,6 +11632,12 @@ let nextPlotId = 1;
 let modelRev = 0;
 let stalePaint = false;
 function touchModel() {
+  // Any edit, load or import means what is on screen is no longer the pristine
+  // shipped example, so a ?example= link would send the recipient somewhere
+  // else. Clearing it here covers every path at once: applyCircuit() calls
+  // touchModel(), so file loads, imports and the Demo all invalidate too, and
+  // loadExampleByName() re-arms it afterwards.
+  loadedExample = null;
   modelRev++;
   // Flow arrows belong to the run that produced them and are keyed by wire
   // INDEX, not by id, so deleting a block or wire silently re-points them at
