@@ -182,6 +182,25 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
 .emt .notice button:hover{opacity:1}
 /* Numerics popover, opened by the gear in the Sim cluster. Same floating-panel
    language as .picker and .layoutdialog. */
+/* Help overlay: centred over the canvas rather than pushing the page down,
+   since the whole of Phase 1 was about reclaiming that vertical space. */
+.emt .helppanel{position:absolute;left:50%;top:8px;transform:translateX(-50%);z-index:30;
+  width:min(760px,calc(100% - 16px));max-height:min(560px,80vh);
+  background:var(--sfc);border:1px solid var(--bds);border-radius:12px;
+  box-shadow:0 10px 40px rgba(0,0,0,.35);flex-direction:column;overflow:hidden}
+.emt .help-hd{display:flex;align-items:center;gap:8px;padding:10px 14px;
+  border-bottom:1px solid var(--bd);background:var(--sfc1);font-size:13px}
+.emt .help-hd button{font-size:11px;padding:4px 12px;background:transparent;color:var(--tx);
+  border:1px solid var(--bds);border-radius:6px;cursor:pointer;min-height:32px}
+.emt .help-body{display:flex;gap:22px;flex-wrap:wrap;padding:14px;overflow:auto}
+.emt .help-col{flex:1 1 300px;min-width:0}
+.emt .help-col h3{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--tx3);margin:0 0 8px}
+.emt .help-col dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:12px}
+.emt .help-col dt{color:var(--tx);font-weight:600;white-space:nowrap}
+.emt .help-col dd{margin:0;color:var(--tx2);line-height:1.5}
+.emt .help-col kbd{font-family:ui-monospace,Consolas,monospace;font-size:11px;
+  background:var(--sfc1);border:1px solid var(--bd);border-bottom-width:2px;border-radius:5px;padding:1px 6px;color:var(--tx)}
 .emt .simadv{position:absolute;z-index:22;background:var(--sfc);border:1px solid var(--bds);
   border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.3);padding:10px 12px;
   display:flex;flex-direction:column;gap:8px;align-items:flex-start}
@@ -372,6 +391,11 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
 .emt .frac .den{padding:0 4px}
 .emt .scisub{font-size:11px;color:var(--tx3);margin:0 0 8px}
 .emt .scisub b{color:var(--acc);font-weight:600}
+/* The contributor call to action under each block's verification status. */
+.emt .valcta{display:inline-block;margin-top:6px;font-size:11px;font-weight:600;color:var(--acc);
+  text-decoration:none;border:1px solid var(--acc);border-radius:6px;padding:3px 8px}
+.emt .valcta:hover{background:var(--accf);color:var(--acct);border-color:var(--accf)}
+.emt .valcta:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 .emt .cct{display:block;width:100%;max-width:360px;height:auto;margin:6px 0 2px}
 </style>
 </head>
@@ -387,6 +411,8 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
   <h1 class="brand">OpenEMT</h1>
   <button class="infobtn" id="infobtn" onclick="toggleAbout()"
     title="What OpenEMT is, and the beta caveat">&#9432;</button>
+  <button class="infobtn" id="helpbtn" onclick="toggleHelp()"
+    title="How to drive this: canvas gestures and the keyboard shortcuts (or press ?)">?</button>
   <span class="projname" id="projname" title="Loaded circuit. &bull; marks unsaved changes">Demo</span>
   <!-- Replaced within ~400ms by whatever the landing case reports, so this is
        the pre-boot state, not onboarding. The interaction model needs a home
@@ -401,7 +427,7 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
   </div>
 </div>
 <p class="sub" id="about">The electromagnetic transient simulator built for AI agents. Trapezoidal nodal solver with steady-state power flow and machine initialization, addressable from this canvas, a CLI, or an MCP server. Beta: provided as is, results are not certified for engineering decisions.
-  <button class="aboutx" onclick="toggleAbout()" title="Hide this (the &#9432; button brings it back)">Dismiss</button></p>
+  <button class="aboutx" onclick="toggleHelp()">How to drive it</button><button class="aboutx" onclick="toggleAbout()" title="Hide this (the &#9432; button brings it back)">Dismiss</button></p>
 <div class="notice" id="notice" role="status" aria-live="polite">
   <span class="notice-t"><span class="notice-l" id="noticelab"></span><span id="noticemsg"></span></span>
   <button onclick="clearNotice(true)" title="Dismiss">Dismiss</button>
@@ -420,7 +446,7 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
     <button id="redobtn" onclick="redo()" disabled title="Redo (Ctrl+Y / Ctrl+Shift+Z)">&#8631; Redo</button>
     <button onclick="delSelected()">Delete</button>
     <button onclick="clearAll()">Clear</button>
-    <button onclick="openLayoutDialog()">Layout</button>
+    <button onclick="autoLayout()" title="Arrange the circuit automatically (best fit). Ctrl+Z undoes it.">Layout</button>
     <button id="widebtn" onclick="toggleWide()" title="Fill the available screen width (for wide monitors).">&#x2194; Wide</button>
     <button id="parambtn" onclick="toggleParams()" title="Show/hide the parameter panel that appears when a block is selected. Off keeps the canvas unobstructed while navigating and rearranging.">&#9881; Params</button>
     <button id="scibtn" onclick="toggleScience()" title="Show/hide the physics/equations panel that appears when a block is selected. Off keeps the canvas unobstructed while navigating and rearranging.">&#9883; Science</button>
@@ -482,6 +508,14 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
      real Run button has scrolled out of view, and becomes Stop while a run is
      in flight so a long run can be cancelled without scrolling back up. -->
 <button id="fabrun" class="fabrun" onclick="fabAction()">&#9654; Run</button>
+<div id="help" class="helppanel" style="display:none">
+  <div class="help-hd">
+    <strong>How to drive OpenEMT</strong>
+    <span class="flexpad"></span>
+    <button onclick="closeHelp()" title="Close (Esc)">Close</button>
+  </div>
+  <div class="help-body" id="helpbody"></div>
+</div>
 <div id="simadv" class="simadv" style="display:none">
   <div class="simadv-hd">Numerics</div>
   <span class="mode" title="Solver's internal trapezoidal step. Smaller = more accurate but slower; larger risks numerical ringing.">

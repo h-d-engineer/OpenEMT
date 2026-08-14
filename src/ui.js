@@ -33,11 +33,23 @@ function pushHistory(snap) {
 // line): shows which file is loaded; "•" = modified since load/save. Not part
 // of undo state — undoing an edit doesn't promise the file matches again.
 let projName = 'Demo';
+let projDirty = false;
 function setProj(name, dirty) {
   if (name != null) projName = name;
+  projDirty = !!dirty;
   const el = document.getElementById('projname');
   if (el) el.textContent = projName + (dirty ? ' •' : '');
 }
+// Closing the tab discarded an afternoon's work without asking. The dirty flag
+// and its bullet marker already existed; nothing acted on them, and there is no
+// autosave and no recovery. Browsers show their own wording here and only honour
+// it after a real interaction with the page, so this cannot nag someone who just
+// looked at the landing case and left.
+window.addEventListener('beforeunload', e => {
+  if (!projDirty) return;
+  e.preventDefault();
+  e.returnValue = ''; // required by older browsers to trigger the prompt
+});
 function restoreSnapshot(snap) {
   touchModel(); // undo/redo can restore any topology or parameter change
   S.blocks = snap.blocks; S.wires = snap.wires; S.plots = snap.plots;
@@ -275,19 +287,49 @@ document.addEventListener('keydown', e => {
   // the popover contains number inputs: checking after it would make Escape
   // dead exactly when the focus is inside the thing you want to dismiss.
   if (e.key === 'Escape') {
+    const hp = document.getElementById('help');
+    if (hp && hp.style.display === 'flex') { e.preventDefault(); closeHelp(); return; }
     const pop = document.getElementById('simadv');
     if (pop && pop.style.display !== 'none') { e.preventDefault(); closeSimAdv(); return; }
   }
   if (tag === 'input' || tag === 'textarea' || tag === 'select') return; // don't hijack typing
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+  if (e.ctrlKey || e.metaKey) {
+    const k = e.key.toLowerCase();
+    // Ctrl+S is the one every editor has and this one did not, on an app that
+    // can lose an afternoon's work to a stray Ctrl+W.
+    if (k === 's') { e.preventDefault(); saveCircuit(); return; }
+    if (k === 'c') { e.preventDefault(); copySelection(false); return; }
+    if (k === 'x') { e.preventDefault(); copySelection(true); return; }
+    if (k === 'v') { e.preventDefault(); pasteClipboard(); return; }
+    if (k === 'd') { e.preventDefault(); duplicateSelection(); return; }
+    if (k === 'a') { e.preventDefault(); selectAllBlocks(); return; }
+  }
+  if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); toggleHelp(); return; }
   if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); focusFind(); return; }
+  if (e.key.startsWith('Arrow') && S.sel.length) {
+    const step = e.shiftKey ? 10 : 1;
+    const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+    if (d) { e.preventDefault(); nudgeSelection(d[0], d[1]); return; }
+  }
   if (e.key.toLowerCase() === 'r' && S.sel.length) { e.preventDefault(); rotateSelected(); return; }
   if ((e.key === 'Delete' || e.key === 'Backspace') && S.sel.length) { e.preventDefault(); delSelected(); return; }
   if ((e.key === 'Delete' || e.key === 'Backspace') && selWire != null) { e.preventDefault(); delSelectedWire(); return; }
+  if (e.key === 'Escape' && cancelWire('Wire cancelled. Nothing was connected.')) return;
   if (e.key === 'Escape' && (S.sel.length || selWire != null)) { S.sel = []; selWire = null; render(); showProps(); }
 });
 
+// Orthogonal wire routing: out horizontally, across at the midpoint, in
+// horizontally. Shared by the real wires and the drag preview so the preview is
+// literally the wire that will be created, not an approximation of it.
+function wirePath(p1, p2) {
+  const mx = (p1[0] + p2[0]) / 2;
+  return 'M' + p1[0] + ' ' + p1[1] + ' L' + mx + ' ' + p1[1] + ' L' + mx + ' ' + p2[1] +
+    ' L' + p2[0] + ' ' + p2[1];
+}
+let hoverTerm = null;   // [blockId, terminalIndex] under the pointer, or null
+let wirePointer = null; // world position of the pointer while wiring
 function render() {
   cnv.setAttribute('viewBox', view.x + ' ' + view.y + ' ' + view.w + ' ' + view.h);
   const sfc = css('--sfc'), bds = css('--bds'), tx = css('--tx'), tx3 = css('--tx3'), acc = css('--acc');
@@ -302,10 +344,12 @@ function render() {
     const a = S.blocks.find(b => b.id === w.a[0]), bb = S.blocks.find(b => b.id === w.b[0]);
     if (!a || !bb) return;
     const p1 = termPos(a, w.a[1]), p2 = termPos(bb, w.b[1]);
+    // The path's midpoint x. wirePath() computes this internally, but the flow
+    // arrows below ride the same Manhattan route and need it too, so it stays
+    // declared here rather than being folded away with the path string.
     const mx = (p1[0] + p2[0]) / 2;
     const wsel = i === selWire;
-    h += '<path d="M' + p1[0] + ' ' + p1[1] + ' L' + mx + ' ' + p1[1] + ' L' + mx + ' ' + p2[1] +
-      ' L' + p2[0] + ' ' + p2[1] + '" fill="none" stroke="' + (wsel ? acc : bds) +
+    h += '<path d="' + wirePath(p1, p2) + '" fill="none" stroke="' + (wsel ? acc : bds) +
       '" stroke-width="' + (wsel ? 3.2 : 1.6) + '" data-wire="' + i + '" style="cursor:pointer"/>';
     if (wsel) { // end markers: which two terminals this wire actually ties together
       h += '<circle cx="' + p1[0] + '" cy="' + p1[1] + '" r="4" fill="' + acc + '"/>'
@@ -367,17 +411,57 @@ function render() {
     h += blockSymbol(b, d, selc, selw, sfc, tx, tx3);
     getTerms(b).forEach((t, ti) => {
       const hot = S.wireFrom && S.wireFrom[0] === b.id && S.wireFrom[1] === ti;
-      h += '<circle cx="' + (b.x + t[0]) + '" cy="' + (b.y + t[1]) + '" r="5.5" fill="' + (hot ? acc : sfc) +
-        '" stroke="' + bds + '" stroke-width="1.2" data-term="' + b.id + ',' + ti + '" style="cursor:crosshair"/>';
+      // Hover feedback. Terminals previously announced themselves only through
+      // a crosshair cursor, which does not exist on touch and is easy to miss
+      // on a mouse, so nothing told you the small circles were targets. The
+      // highlight follows nearestTerminal(), so it also shows WHICH terminal a
+      // click would take when several are close together.
+      const hov = hoverTerm && hoverTerm[0] === b.id && hoverTerm[1] === ti;
+      const r = hot || hov ? 7 : 5.5;
+      h += '<circle cx="' + (b.x + t[0]) + '" cy="' + (b.y + t[1]) + '" r="' + r + '" fill="' + (hot ? acc : sfc) +
+        '" stroke="' + (hot || hov ? acc : bds) + '" stroke-width="' + (hot || hov ? 2.2 : 1.2) +
+        '" data-term="' + b.id + ',' + ti + '" style="cursor:crosshair"/>';
     });
     h += '</g>';
     if (b.type !== 'gnd' && b.type !== 'probe' && b.type !== 'bus') h += blockLabel(b, d, tx, tx3);
   });
+  // Empty state. Clearing the canvas used to leave a blank rectangle with no
+  // prompt of any kind, at the exact moment a user has decided to build
+  // something of their own. A blank panel in an app reads as a fault, not as an
+  // invitation, so it says what to do instead.
+  if (!S.blocks.length) {
+    const cx = view.x + view.w / 2, cy = view.y + view.h / 2;
+    const fs = Math.max(11, view.w / 52); // scale with the camera so it stays legible at any zoom
+    h += '<text x="' + cx + '" y="' + (cy - fs * 0.9) + '" text-anchor="middle" fill="' + tx3 +
+      '" font-size="' + fs + '" font-family="system-ui,sans-serif" pointer-events="none">Empty canvas.</text>';
+    h += '<text x="' + cx + '" y="' + (cy + fs * 0.5) + '" text-anchor="middle" fill="' + tx3 +
+      '" font-size="' + fs * 0.82 + '" font-family="system-ui,sans-serif" pointer-events="none">' +
+      'Open the Library to place a block, or pick a circuit from Examples.</text>';
+    h += '<text x="' + cx + '" y="' + (cy + fs * 1.8) + '" text-anchor="middle" fill="' + tx3 +
+      '" font-size="' + fs * 0.82 + '" font-family="system-ui,sans-serif" pointer-events="none">' +
+      'Every circuit needs a Ground, and a Probe to plot.</text>';
+  }
   if (drag && drag.type === 'rubber') {
     const rx = Math.min(drag.x0, drag.x1), ry = Math.min(drag.y0, drag.y1);
     const rw = Math.abs(drag.x1 - drag.x0), rh = Math.abs(drag.y1 - drag.y0);
     h += '<rect x="' + rx + '" y="' + ry + '" width="' + rw + '" height="' + rh +
       '" fill="' + acc + '" fill-opacity="0.12" stroke="' + acc + '" stroke-width="1" stroke-dasharray="4 3"/>';
+  }
+  // Wire preview. Clicking the first terminal used to change only that dot's
+  // fill: nothing followed the pointer, so there was no indication you were
+  // mid-wire and no way to see where the wire would land. Drawn with the same
+  // orthogonal routing render() uses for real wires, so the preview is the
+  // wire. Its `d` is rewritten directly on pointermove (see WIRE PREVIEW in the
+  // pointermove handler) rather than by re-rendering the whole schematic.
+  if (S.wireFrom) {
+    const fb = S.blocks.find(x => x.id === S.wireFrom[0]);
+    if (fb) {
+      const p1 = termPos(fb, S.wireFrom[1]);
+      const p2 = wirePointer || p1;
+      h += '<path id="wirepv" d="' + wirePath(p1, p2) + '" fill="none" stroke="' + acc +
+        '" stroke-width="1.8" stroke-dasharray="5 4" opacity="0.85" pointer-events="none"/>';
+      h += '<circle cx="' + p1[0] + '" cy="' + p1[1] + '" r="3" fill="' + acc + '" pointer-events="none"/>';
+    }
   }
   // Palette drag ghost: a translucent preview of the block being dragged from
   // the palette, following the cursor in world coords. Same blockSymbol art as
@@ -1011,10 +1095,16 @@ cnv.addEventListener('pointerdown', e => {
   const near = mod ? null : nearestTerminal(e);
   if (near) {
     const parts = near;
-    if (!S.wireFrom) S.wireFrom = parts;
-    else {
-      if (!(S.wireFrom[0] === parts[0] && S.wireFrom[1] === parts[1])) { pushHistory(); touchModel(); S.wires.push({ a: S.wireFrom, b: parts }); }
-      S.wireFrom = null;
+    if (!S.wireFrom) {
+      S.wireFrom = parts; wirePointer = [pt.x, pt.y];
+      setStatus('Wiring from ' + wireEndLabel(parts) + '. Click another terminal to connect, or press Esc to cancel.');
+    } else {
+      const same = S.wireFrom[0] === parts[0] && S.wireFrom[1] === parts[1];
+      if (!same) {
+        pushHistory(); touchModel(); S.wires.push({ a: S.wireFrom, b: parts });
+        setStatus('Connected ' + wireEndLabel(S.wireFrom) + ' to ' + wireEndLabel(parts) + '.');
+      } else setStatus('Wire cancelled: that is the terminal it started from.');
+      S.wireFrom = null; wirePointer = null;
     }
     render(); return;
   }
@@ -1039,7 +1129,8 @@ cnv.addEventListener('pointerdown', e => {
     capture(e);
     render(); return;
   }
-  S.sel = []; S.wireFrom = null;
+  if (S.wireFrom) { S.wireFrom = null; wirePointer = null; setStatus('Wire cancelled: that was empty canvas, not a terminal.'); }
+  S.sel = [];
   drag = { type: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y };
   capture(e);
   render(); showProps();
@@ -1063,6 +1154,41 @@ cnv.addEventListener('pointermove', e => {
   }
   renderDrag();
 });
+// Hover feedback and the wire preview. Separate listener from the drag one
+// above, which returns early when there is no drag: that is exactly when these
+// two are live.
+//
+// Both are careful about cost, because a full render() is 8.4ms at 147 blocks
+// and this fires on every pointer move (issue #15):
+//   WIRE PREVIEW rewrites the one path's `d` attribute directly. No re-render.
+//   HOVER re-renders only when the hovered terminal actually CHANGES, and even
+//   then through the rAF-coalesced renderDrag().
+cnv.addEventListener('pointermove', e => {
+  if (drag) return; // a drag owns the pointer; the handler above has it
+  const pt = svgPt(e);
+  if (S.wireFrom) {
+    wirePointer = [pt.x, pt.y];
+    const pv = document.getElementById('wirepv');
+    const fb = S.blocks.find(x => x.id === S.wireFrom[0]);
+    if (pv && fb) pv.setAttribute('d', wirePath(termPos(fb, S.wireFrom[1]), wirePointer));
+    else renderDrag(); // preview not in the DOM yet: one render to create it
+  }
+  const near = nearestTerminal(e);
+  const same = (a, b) => (!a && !b) || (a && b && a[0] === b[0] && a[1] === b[1]);
+  if (!same(near, hoverTerm)) { hoverTerm = near; renderDrag(); }
+});
+cnv.addEventListener('pointerleave', () => {
+  if (hoverTerm) { hoverTerm = null; renderDrag(); }
+});
+// Cancel an in-progress wire and say so. It used to reset silently on a click
+// anywhere else, which is indistinguishable from a click that did nothing.
+function cancelWire(reason) {
+  if (!S.wireFrom) return false;
+  S.wireFrom = null; wirePointer = null;
+  setStatus(reason || 'Wire cancelled.');
+  render();
+  return true;
+}
 // A touch drag must not be allowed to turn into a page scroll halfway through.
 // #cnv sets touch-action:none, but that property is not inherited and every SVG
 // child computes to `auto`; iOS Safari does not reliably honour the ancestor's
@@ -1519,10 +1645,19 @@ function validationNote(type) {
       + 'damping and the switching instants are not independently checked',
     Low: 'checked against an exact phasor or a node identity, several to within 1e-9',
   }[tier];
+  // The call to action. This paragraph is the most honest thing in the app and
+  // it used to end in a full stop. Anyone reading it who holds a PSCAD, PSS/E,
+  // PowerFactory or EMTP-RV seat is exactly the contributor the project needs,
+  // and they are reading it at the moment they care: while judging whether to
+  // trust this block. The link carries the block type so the report arrives
+  // already saying which one it is about.
+  const url = 'https://github.com/h-d-engineer/OpenEMT/issues/new'
+    + '?template=04-block-validation.yml&title=' + encodeURIComponent('Validation: ' + type);
   return '<span class="hint"><b>Verification:</b> ' + tier + ' cross-check priority, ' + what
     + '. No block in OpenEMT has been cross-checked against a commercial EMT program yet, which is why '
     + 'results are not certified for engineering decisions. See VALIDATION.md for this block\'s checks '
-    + 'and tolerances.</span>';
+    + 'and tolerances.<br><a class="valcta" href="' + url + '" target="_blank" rel="noopener noreferrer">'
+    + 'Have a commercial EMT licence? Report a cross-check for ' + escAttr(type) + '</a></span>';
 }
 
 // ---- Science / formula panel (educational layer, SPEC §5). One block at a
@@ -3205,6 +3340,93 @@ function delSelected() {
   render(); showProps();
 }
 
+// ---- clipboard: copy / cut / paste / duplicate ----
+// Building anything repetitive meant a trip to the Library per block plus
+// retyping every parameter. A feeder is the same three blocks over and over,
+// and the app shipped a 39-bus example while offering no way to copy one.
+//
+// The load-bearing part is that a multi-block copy keeps the wiring INTERNAL to
+// the selection. Copying a line plus its breaker and getting two unconnected
+// blocks back is barely better than placing them by hand; the wiring is most of
+// the work. Wires with exactly one end in the selection are dropped, because
+// their other end is a block the paste has no copy of.
+//
+// An in-page clipboard, not the system one: the system clipboard needs a secure
+// context, which file:// is not, and this app is meant to work opened straight
+// off disk. The cost is that copying between two OpenEMT tabs does not work,
+// which Save/Load already covers.
+let clipboard = null;
+const PASTE_OFFSET = 24; // world units, so a paste lands visibly beside the original
+function copySelection(cut) {
+  if (!S.sel.length) { showWarn('Select one or more blocks first, then copy.'); return false; }
+  const ids = new Set(S.sel);
+  const blocks = S.blocks.filter(b => ids.has(b.id));
+  clipboard = {
+    blocks: JSON.parse(JSON.stringify(blocks)),
+    // Store wire ends as INDICES into the copied block array, not block ids:
+    // the ids are reassigned on paste, and an index survives that.
+    wires: S.wires.filter(w => ids.has(w.a[0]) && ids.has(w.b[0])).map(w => ({
+      a: [blocks.findIndex(b => b.id === w.a[0]), w.a[1]],
+      b: [blocks.findIndex(b => b.id === w.b[0]), w.b[1]]
+    }))
+  };
+  if (cut) delSelected();
+  const n = clipboard.blocks.length, m = clipboard.wires.length;
+  setStatus((cut ? 'Cut ' : 'Copied ') + n + ' block' + (n === 1 ? '' : 's')
+    + (m ? ' and ' + m + ' wire' + (m === 1 ? '' : 's') + ' between them' : '')
+    + '. Ctrl+V to paste.');
+  return true;
+}
+// dx/dy let Duplicate reuse this with a fixed offset. Pasted blocks become the
+// new selection, so a second Ctrl+V steps further out rather than stacking.
+function pasteClipboard(dx, dy) {
+  if (!clipboard || !clipboard.blocks.length) {
+    showWarn('Nothing to paste. Select blocks and press Ctrl+C first.'); return;
+  }
+  pushHistory(); touchModel();
+  const ox = dx == null ? PASTE_OFFSET : dx, oy = dy == null ? PASTE_OFFSET : dy;
+  const made = clipboard.blocks.map(src => {
+    const b = JSON.parse(JSON.stringify(src));
+    b.id = S.nextId++; b.x += ox; b.y += oy;
+    // pfInit/pfV are a saved operating point, not part of the model (CLAUDE.md).
+    // Carrying them into a copy would start the new block from another block's
+    // solve, so they are stripped here the same way the build strips them.
+    delete b.pfInit; delete b.pfV;
+    S.blocks.push(b); return b;
+  });
+  clipboard.wires.forEach(w => {
+    if (!made[w.a[0]] || !made[w.b[0]]) return;
+    S.wires.push({ a: [made[w.a[0]].id, w.a[1]], b: [made[w.b[0]].id, w.b[1]] });
+  });
+  S.sel = made.map(b => b.id); selWire = null;
+  // Paste again and the copies walk, rather than piling on the same spot.
+  clipboard.blocks.forEach(b => { b.x += ox; b.y += oy; });
+  const n = made.length, m = clipboard.wires.length;
+  setStatus('Pasted ' + n + ' block' + (n === 1 ? '' : 's')
+    + (m ? ' and ' + m + ' wire' + (m === 1 ? '' : 's') : '') + '. Ctrl+Z to undo.');
+  render(); showProps();
+}
+function duplicateSelection() {
+  if (!S.sel.length) { showWarn('Select one or more blocks first, then duplicate.'); return; }
+  const keep = clipboard;      // Duplicate must not clobber what the user copied
+  if (copySelection(false)) pasteClipboard();
+  clipboard = keep || clipboard;
+}
+function selectAllBlocks() {
+  if (!S.blocks.length) return;
+  S.sel = S.blocks.map(b => b.id); selWire = null;
+  setStatus('Selected all ' + S.sel.length + ' blocks.');
+  render(); showProps();
+}
+// Arrow keys nudge the selection. Shift is the coarse step, matching the grid
+// most schematic editors use, so fine alignment does not need the mouse.
+function nudgeSelection(dx, dy) {
+  if (!S.sel.length) return;
+  pushHistory(); touchModel();
+  S.blocks.forEach(b => { if (S.sel.includes(b.id)) { b.x += dx; b.y += dy; } });
+  render(); showProps();
+}
+
 // ---- auto-layout (hierarchical tier-based left-to-right or top-to-bottom) ----
 // 'fit' is the only direction offered in the UI right now. 'lr' and 'tb' still
 // work in doHierarchicalLayout() and are reachable from the API, but the dialog
@@ -3236,6 +3458,18 @@ function selectLayoutDir(dir) {
 function applyLayout() {
   doHierarchicalLayout(layoutDir);
   closeLayoutDialog();
+}
+// The toolbar's Layout button. Two of the dialog's three options are disabled
+// while busAwareLayout() learns to transpose, so opening it presented a chooser
+// whose main content was two refusals. Being honest about the limitation is
+// right; making the user dismiss a dialog to reach the only working option is
+// not. This applies Best fit directly and says so. Restore openLayoutDialog()
+// as the handler once the fixed-direction layouts work (IDEAS.md).
+function autoLayout() {
+  if (!S.blocks.length) { showWarn('Nothing to lay out: the canvas is empty.'); return; }
+  layoutDir = 'fit';
+  doHierarchicalLayout('fit');
+  setStatus('Laid out ' + S.blocks.length + ' blocks (best fit). Ctrl+Z to undo.');
 }
 
 // ---- Bus-aware layout for meshed power networks (DECISIONS.md 2026-07-15) ----
@@ -3805,12 +4039,35 @@ function pruneBlockSignals(id) {
   S.plots.forEach(pl => { if (!pl.auto) pl.sigs = pl.sigs.filter(s => s.key.split(':')[1] !== String(id)); });
 }
 function clearAll() {
+  const hadBlocks = S.blocks.length, hadWires = S.wires.length;
+  const wasConv = S.vconv;
   pushHistory(); touchModel(); resetRunState(); findReset(); // an empty canvas has no results and nothing to find
   S.blocks = []; S.wires = []; S.sel = []; S.wireFrom = null; selWire = null;
+  wirePointer = null; hoverTerm = null;
   S.vconv = 'll'; // a fresh blank circuit defaults to line-to-line entry (SPEC §2); loaded files keep their own convention
   S.plots.forEach(pl => { if (!pl.auto) pl.sigs = []; });
-  setProj('Untitled', false); // fresh canvas — nothing worth marking dirty yet
+  setProj('Untitled', false); // fresh canvas: nothing worth marking dirty yet
   syncVconvUI(); render(); showProps();
+  // Say what happened, on three counts.
+  //
+  // The status line otherwise kept reporting the previous solve ("Solved: 3
+  // nodes ... 2,400 steps") over an empty canvas, which is simply false.
+  //
+  // Undo restores everything (pushHistory ran first), but nothing said so, so
+  // an accidental Clear looked unrecoverable.
+  //
+  // And the convention flip is the one that can silently corrupt a model: this
+  // resets phase entry to line-to-line per SPEC section 2, so clearing and
+  // retyping the same voltages gives a circuit wrong by root three with no
+  // other symptom. That is a named trap in CLAUDE.md and it is reachable by
+  // pressing a button labelled Clear, so it gets said out loud.
+  const bits = ['Cleared the canvas'];
+  if (hadBlocks || hadWires) bits.push(' (' + hadBlocks + ' block' + (hadBlocks === 1 ? '' : 's')
+    + ', ' + hadWires + ' wire' + (hadWires === 1 ? '' : 's') + ')');
+  bits.push('. Ctrl+Z restores it.');
+  if (wasConv !== 'll') bits.push(' Voltage entry reset to line-to-line (LL): a value that meant '
+    + 'phase volts before now means line-to-line, a factor of root 3.');
+  setStatus(bits.join(''));
 }
 // Voltage convention (SPEC §2): 'ph' = params are phase RMS (legacy), 'll' =
 // line-to-line RMS. The solver divides an LL value by sqrt(3) at the boundary
@@ -3919,6 +4176,69 @@ function toggleAbout() {
   syncCanvasHeight(); // the row appearing/disappearing moves the canvas top
   onCanvasResize(); // ...and therefore changes its aspect
 }
+// ---- help panel ----
+// The app's interaction model had no permanent home. It shipped in #stat, which
+// the landing case's auto-run overwrites ~400ms later, and in 35 title
+// attributes that do not exist on touch, cannot be searched, and never appear
+// in a screenshot. So the one thing a new visitor needs was the one thing they
+// could not get.
+//
+// SHORTCUTS is the single source for the key list. smoke_test asserts every key
+// here also appears in the keydown handler, so the panel cannot quietly drift
+// from what the app actually does; a stale shortcut list is worse than none,
+// because someone trusts it.
+const SHORTCUTS = [
+  ['Ctrl+Z', 'Undo'],
+  ['Ctrl+Y', 'Redo'],
+  ['Ctrl+S', 'Save the circuit to a file'],
+  ['Ctrl+C', 'Copy the selected blocks'],
+  ['Ctrl+X', 'Cut the selected blocks'],
+  ['Ctrl+V', 'Paste (keeps the wiring between copied blocks)'],
+  ['Ctrl+D', 'Duplicate the selection in place'],
+  ['Ctrl+A', 'Select every block'],
+  ['/', 'Jump to the Find box'],
+  ['R', 'Rotate the selection 90 degrees'],
+  ['Arrows', 'Nudge the selection by 1 unit, or 10 with Shift'],
+  ['Delete', 'Delete the selected blocks or wire'],
+  ['Esc', 'Cancel a wire, close a popover, or clear the selection']
+];
+const CANVAS_HELP = [
+  ['Place a block', 'Open the Library, then click an item to drop it or drag it where you want it.'],
+  ['Wire two blocks', 'Click a terminal, then click another. A dashed preview follows the pointer; Esc cancels.'],
+  ['Edit a block', 'Click it. Parameters appear on the left, the physics and equations on the right.'],
+  ['Move things', 'Drag a block. Drag empty canvas to pan. Shift or Ctrl drag to rubber-band select.'],
+  ['Zoom', 'Scroll, or use the +/- buttons at the bottom right of the canvas.'],
+  ['Read a value', 'Hover a plot for a crosshair and the value of every signal at that instant.'],
+  ['Resize', 'Drag the tab under the canvas or under any plot. Double-click it to reset.'],
+  ['Every circuit needs', 'A Ground block, and a Probe on any node you want to plot.']
+];
+function buildHelp() {
+  const el = document.getElementById('helpbody');
+  if (!el) return;
+  el.innerHTML =
+    '<div class="help-col"><h3>On the canvas</h3><dl>'
+    + CANVAS_HELP.map(([k, v]) => '<dt>' + escAttr(k) + '</dt><dd>' + escAttr(v) + '</dd>').join('')
+    + '</dl></div>'
+    + '<div class="help-col"><h3>Keyboard</h3><dl>'
+    + SHORTCUTS.map(([k, v]) => '<dt><kbd>' + escAttr(k) + '</kbd></dt><dd>' + escAttr(v) + '</dd>').join('')
+    + '</dl></div>';
+}
+function toggleHelp() {
+  const el = document.getElementById('help');
+  const btn = document.getElementById('helpbtn');
+  if (!el) return;
+  const open = el.style.display === 'none' || !el.style.display;
+  if (open) buildHelp();
+  el.style.display = open ? 'flex' : 'none';
+  if (btn) btn.classList.toggle('on', open);
+}
+function closeHelp() {
+  const el = document.getElementById('help');
+  const btn = document.getElementById('helpbtn');
+  if (el) el.style.display = 'none';
+  if (btn) btn.classList.remove('on');
+}
+
 // "More" reveals the collapsed toolbar clusters on narrow screens. Not
 // persisted: unlike the rail toggles this is a peek at controls you are about
 // to use once, not a layout preference, and leaving it latched would put the
@@ -5100,6 +5420,14 @@ function drawOnePlot(pl, dark) {
 // a 3-phase branch's total P/Q (SPEC §3): reported as one aggregate value,
 // the conventional way 3-phase power is quoted, not per-phase like current.
 function phaseLabel(d) { return d.dc ? 'DC' : (d.phase == null ? '' : PH_LBL[d.phase]); }
+
+// The neutral channel: progress, solve summaries, confirmations. Anything that
+// is a problem goes to showError/showWarn below instead, which is a band that
+// wraps and persists rather than a one-line strip that ellipsises.
+function setStatus(msg) {
+  const el = document.getElementById('stat');
+  if (el) el.textContent = msg;
+}
 
 // ---- notice band (errors and warnings) ----
 // The solver's diagnostics are the best writing in this project: they name the

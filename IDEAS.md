@@ -372,6 +372,16 @@ honest), and almost none of it is delivered where a person can receive it. So
 most of the work is moving existing quality into the user's field of view rather
 than adding features. Ordered in four phases by how many users each reaches.
 
+**All four phases are DONE (2026-08-13 to 14); the why is in DECISIONS.md.** The
+findings are kept below as the record of what was wrong and what the numbers
+were, since several of them are the kind of thing that creeps back. Headline
+deltas, all measured rather than estimated: at 1280x720 a run went from drawing
+0px of visible waveform to 137px; on a 375px viewport chrome above the canvas
+went 627px to 257px, visible controls 30 (all under 44px) to 4 (all at 44px),
+and a wire terminal from a 2.1px target to a 30px median. Every text token
+clears WCAG AA in both themes. Four new guards keep it that way: contrast,
+shortcut-list drift, the em-dash ban, and the VALIDATION scoreboard.
+
 *Phase 1, make the run/look/adjust loop visible (the whole point of the tool):*
 
 - **The result of pressing Run is off screen.** At 1280x720 the first plot

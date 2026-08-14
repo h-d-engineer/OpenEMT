@@ -3766,3 +3766,58 @@ spirit, several browser-automation results here were timing artifacts rather
 than defects (an IntersectionObserver callback had not fired, a `scrollTo` used
 a stale page height, a captured DOM node had been replaced by a re-render).
 Confirm the measurement before believing the bug.
+
+## 2026-08-14: Phases 3 and 4 of the usability plan
+
+**A multi-block copy keeps the wiring inside the selection.** That is the whole
+value: copying a source, breaker and line and getting three unconnected blocks
+back is barely better than placing them by hand, because the wiring is most of
+the work. Wires with exactly one end in the selection are dropped, since the
+other end is a block the paste has no copy of, and wire ends are stored as
+indices into the copied block array rather than block ids because the ids are
+reassigned on paste. Proven by duplicating a working circuit and running it: 1
+node and 2 branches became 2 and 4, so the copy is a genuinely independent
+second circuit rather than something that merely looks right on the canvas. The
+clipboard is in-page, not the system one: the system clipboard needs a secure
+context and this app is meant to work opened straight off disk.
+
+**The wire preview is the wire.** `wirePath()` is shared by real wires and the
+preview so what you drag is what you get. Both the preview and the terminal
+hover are budgeted against issue #15: the preview rewrites one path's `d`
+attribute with no re-render, and the hover re-renders only when the hovered
+terminal actually changes, through the rAF-coalesced `renderDrag()`. All three
+cancel paths now say so, because a silent reset is indistinguishable from a
+click that did nothing.
+
+**Clear says what it did, including the part that can corrupt a model.** It
+resets voltage entry to line-to-line per SPEC section 2, so clearing and
+retyping the same numbers yields a circuit wrong by root three with no other
+symptom. That trap is named in CLAUDE.md and reachable by pressing a button, so
+it is announced, and the note is omitted when the convention did not actually
+change so it does not degrade into boilerplate. Clear also now says Ctrl+Z
+restores everything, which was already true and entirely invisible.
+
+**The shortcut list is generated from data and guarded against drift.**
+`SHORTCUTS` drives the help panel, and `smoke_test` asserts it matches the
+keydown handler in both directions. A stale shortcut list is worse than none,
+because someone reads it and trusts it. Same reasoning as the VALIDATION.md
+scoreboard guard: any user-facing claim that is maintained by hand beside the
+code it describes will eventually disagree with it.
+
+**The verification note now ends in a link, not a full stop.** It is the most
+honest paragraph in the app, and the person reading it while deciding whether
+to trust a block is exactly the person with a commercial licence who could
+settle the question. The link carries the block type into the issue title.
+
+**Layout applies Best fit directly.** Two of the dialog's three options are
+disabled while `busAwareLayout()` learns to transpose, so opening it presented a
+chooser whose main content was two refusals. Honest, but making someone dismiss
+a dialog to reach the only working option is not. The dialog stays in the code
+for when the other directions work.
+
+**Lesson repeated from Phase 2, with a new instance.** Factoring the wire router
+into `wirePath()` removed a `const mx` that the flow-arrow code further down the
+same loop also used, so every render threw and the arrows vanished. Both test
+suites stayed green: it is a browser render path, invisible to them. The browser
+check caught it. Anything that only exists at paint time needs to be exercised
+at paint time.
