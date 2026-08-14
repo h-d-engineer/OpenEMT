@@ -275,6 +275,8 @@ document.addEventListener('keydown', e => {
   // the popover contains number inputs: checking after it would make Escape
   // dead exactly when the focus is inside the thing you want to dismiss.
   if (e.key === 'Escape') {
+    const hp = document.getElementById('help');
+    if (hp && hp.style.display === 'flex') { e.preventDefault(); closeHelp(); return; }
     const pop = document.getElementById('simadv');
     if (pop && pop.style.display !== 'none') { e.preventDefault(); closeSimAdv(); return; }
   }
@@ -292,6 +294,7 @@ document.addEventListener('keydown', e => {
     if (k === 'd') { e.preventDefault(); duplicateSelection(); return; }
     if (k === 'a') { e.preventDefault(); selectAllBlocks(); return; }
   }
+  if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); toggleHelp(); return; }
   if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); focusFind(); return; }
   if (e.key.startsWith('Arrow') && S.sel.length) {
     const step = e.shiftKey ? 10 : 1;
@@ -329,6 +332,10 @@ function render() {
     const a = S.blocks.find(b => b.id === w.a[0]), bb = S.blocks.find(b => b.id === w.b[0]);
     if (!a || !bb) return;
     const p1 = termPos(a, w.a[1]), p2 = termPos(bb, w.b[1]);
+    // The path's midpoint x. wirePath() computes this internally, but the flow
+    // arrows below ride the same Manhattan route and need it too, so it stays
+    // declared here rather than being folded away with the path string.
+    const mx = (p1[0] + p2[0]) / 2;
     const wsel = i === selWire;
     h += '<path d="' + wirePath(p1, p2) + '" fill="none" stroke="' + (wsel ? acc : bds) +
       '" stroke-width="' + (wsel ? 3.2 : 1.6) + '" data-wire="' + i + '" style="cursor:pointer"/>';
@@ -4136,6 +4143,69 @@ function toggleAbout() {
   syncCanvasHeight(); // the row appearing/disappearing moves the canvas top
   onCanvasResize(); // ...and therefore changes its aspect
 }
+// ---- help panel ----
+// The app's interaction model had no permanent home. It shipped in #stat, which
+// the landing case's auto-run overwrites ~400ms later, and in 35 title
+// attributes that do not exist on touch, cannot be searched, and never appear
+// in a screenshot. So the one thing a new visitor needs was the one thing they
+// could not get.
+//
+// SHORTCUTS is the single source for the key list. smoke_test asserts every key
+// here also appears in the keydown handler, so the panel cannot quietly drift
+// from what the app actually does; a stale shortcut list is worse than none,
+// because someone trusts it.
+const SHORTCUTS = [
+  ['Ctrl+Z', 'Undo'],
+  ['Ctrl+Y', 'Redo'],
+  ['Ctrl+S', 'Save the circuit to a file'],
+  ['Ctrl+C', 'Copy the selected blocks'],
+  ['Ctrl+X', 'Cut the selected blocks'],
+  ['Ctrl+V', 'Paste (keeps the wiring between copied blocks)'],
+  ['Ctrl+D', 'Duplicate the selection in place'],
+  ['Ctrl+A', 'Select every block'],
+  ['/', 'Jump to the Find box'],
+  ['R', 'Rotate the selection 90 degrees'],
+  ['Arrows', 'Nudge the selection by 1 unit, or 10 with Shift'],
+  ['Delete', 'Delete the selected blocks or wire'],
+  ['Esc', 'Cancel a wire, close a popover, or clear the selection']
+];
+const CANVAS_HELP = [
+  ['Place a block', 'Open the Library, then click an item to drop it or drag it where you want it.'],
+  ['Wire two blocks', 'Click a terminal, then click another. A dashed preview follows the pointer; Esc cancels.'],
+  ['Edit a block', 'Click it. Parameters appear on the left, the physics and equations on the right.'],
+  ['Move things', 'Drag a block. Drag empty canvas to pan. Shift or Ctrl drag to rubber-band select.'],
+  ['Zoom', 'Scroll, or use the +/- buttons at the bottom right of the canvas.'],
+  ['Read a value', 'Hover a plot for a crosshair and the value of every signal at that instant.'],
+  ['Resize', 'Drag the tab under the canvas or under any plot. Double-click it to reset.'],
+  ['Every circuit needs', 'A Ground block, and a Probe on any node you want to plot.']
+];
+function buildHelp() {
+  const el = document.getElementById('helpbody');
+  if (!el) return;
+  el.innerHTML =
+    '<div class="help-col"><h3>On the canvas</h3><dl>'
+    + CANVAS_HELP.map(([k, v]) => '<dt>' + escAttr(k) + '</dt><dd>' + escAttr(v) + '</dd>').join('')
+    + '</dl></div>'
+    + '<div class="help-col"><h3>Keyboard</h3><dl>'
+    + SHORTCUTS.map(([k, v]) => '<dt><kbd>' + escAttr(k) + '</kbd></dt><dd>' + escAttr(v) + '</dd>').join('')
+    + '</dl></div>';
+}
+function toggleHelp() {
+  const el = document.getElementById('help');
+  const btn = document.getElementById('helpbtn');
+  if (!el) return;
+  const open = el.style.display === 'none' || !el.style.display;
+  if (open) buildHelp();
+  el.style.display = open ? 'flex' : 'none';
+  if (btn) btn.classList.toggle('on', open);
+}
+function closeHelp() {
+  const el = document.getElementById('help');
+  const btn = document.getElementById('helpbtn');
+  if (el) el.style.display = 'none';
+  if (btn) btn.classList.remove('on');
+}
+
 // "More" reveals the collapsed toolbar clusters on narrow screens. Not
 // persisted: unlike the rail toggles this is a peek at controls you are about
 // to use once, not a layout preference, and leaving it latched would put the

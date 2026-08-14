@@ -182,6 +182,25 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
 .emt .notice button:hover{opacity:1}
 /* Numerics popover, opened by the gear in the Sim cluster. Same floating-panel
    language as .picker and .layoutdialog. */
+/* Help overlay: centred over the canvas rather than pushing the page down,
+   since the whole of Phase 1 was about reclaiming that vertical space. */
+.emt .helppanel{position:absolute;left:50%;top:8px;transform:translateX(-50%);z-index:30;
+  width:min(760px,calc(100% - 16px));max-height:min(560px,80vh);
+  background:var(--sfc);border:1px solid var(--bds);border-radius:12px;
+  box-shadow:0 10px 40px rgba(0,0,0,.35);flex-direction:column;overflow:hidden}
+.emt .help-hd{display:flex;align-items:center;gap:8px;padding:10px 14px;
+  border-bottom:1px solid var(--bd);background:var(--sfc1);font-size:13px}
+.emt .help-hd button{font-size:11px;padding:4px 12px;background:transparent;color:var(--tx);
+  border:1px solid var(--bds);border-radius:6px;cursor:pointer;min-height:32px}
+.emt .help-body{display:flex;gap:22px;flex-wrap:wrap;padding:14px;overflow:auto}
+.emt .help-col{flex:1 1 300px;min-width:0}
+.emt .help-col h3{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--tx3);margin:0 0 8px}
+.emt .help-col dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:12px}
+.emt .help-col dt{color:var(--tx);font-weight:600;white-space:nowrap}
+.emt .help-col dd{margin:0;color:var(--tx2);line-height:1.5}
+.emt .help-col kbd{font-family:ui-monospace,Consolas,monospace;font-size:11px;
+  background:var(--sfc1);border:1px solid var(--bd);border-bottom-width:2px;border-radius:5px;padding:1px 6px;color:var(--tx)}
 .emt .simadv{position:absolute;z-index:22;background:var(--sfc);border:1px solid var(--bds);
   border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.3);padding:10px 12px;
   display:flex;flex-direction:column;gap:8px;align-items:flex-start}
@@ -387,6 +406,8 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
   <h1 class="brand">OpenEMT</h1>
   <button class="infobtn" id="infobtn" onclick="toggleAbout()"
     title="What OpenEMT is, and the beta caveat">&#9432;</button>
+  <button class="infobtn" id="helpbtn" onclick="toggleHelp()"
+    title="How to drive this: canvas gestures and the keyboard shortcuts (or press ?)">?</button>
   <span class="projname" id="projname" title="Loaded circuit. &bull; marks unsaved changes">Demo</span>
   <!-- Replaced within ~400ms by whatever the landing case reports, so this is
        the pre-boot state, not onboarding. The interaction model needs a home
@@ -401,7 +422,7 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
   </div>
 </div>
 <p class="sub" id="about">The electromagnetic transient simulator built for AI agents. Trapezoidal nodal solver with steady-state power flow and machine initialization, addressable from this canvas, a CLI, or an MCP server. Beta: provided as is, results are not certified for engineering decisions.
-  <button class="aboutx" onclick="toggleAbout()" title="Hide this (the &#9432; button brings it back)">Dismiss</button></p>
+  <button class="aboutx" onclick="toggleHelp()">How to drive it</button><button class="aboutx" onclick="toggleAbout()" title="Hide this (the &#9432; button brings it back)">Dismiss</button></p>
 <div class="notice" id="notice" role="status" aria-live="polite">
   <span class="notice-t"><span class="notice-l" id="noticelab"></span><span id="noticemsg"></span></span>
   <button onclick="clearNotice(true)" title="Dismiss">Dismiss</button>
@@ -482,6 +503,14 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
      real Run button has scrolled out of view, and becomes Stop while a run is
      in flight so a long run can be cancelled without scrolling back up. -->
 <button id="fabrun" class="fabrun" onclick="fabAction()">&#9654; Run</button>
+<div id="help" class="helppanel" style="display:none">
+  <div class="help-hd">
+    <strong>How to drive OpenEMT</strong>
+    <span class="flexpad"></span>
+    <button onclick="closeHelp()" title="Close (Esc)">Close</button>
+  </div>
+  <div class="help-body" id="helpbody"></div>
+</div>
 <div id="simadv" class="simadv" style="display:none">
   <div class="simadv-hd">Numerics</div>
   <span class="mode" title="Solver's internal trapezoidal step. Smaller = more accurate but slower; larger risks numerical ringing.">
@@ -8062,6 +8091,8 @@ document.addEventListener('keydown', e => {
   // the popover contains number inputs: checking after it would make Escape
   // dead exactly when the focus is inside the thing you want to dismiss.
   if (e.key === 'Escape') {
+    const hp = document.getElementById('help');
+    if (hp && hp.style.display === 'flex') { e.preventDefault(); closeHelp(); return; }
     const pop = document.getElementById('simadv');
     if (pop && pop.style.display !== 'none') { e.preventDefault(); closeSimAdv(); return; }
   }
@@ -8079,6 +8110,7 @@ document.addEventListener('keydown', e => {
     if (k === 'd') { e.preventDefault(); duplicateSelection(); return; }
     if (k === 'a') { e.preventDefault(); selectAllBlocks(); return; }
   }
+  if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); toggleHelp(); return; }
   if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); focusFind(); return; }
   if (e.key.startsWith('Arrow') && S.sel.length) {
     const step = e.shiftKey ? 10 : 1;
@@ -8116,6 +8148,10 @@ function render() {
     const a = S.blocks.find(b => b.id === w.a[0]), bb = S.blocks.find(b => b.id === w.b[0]);
     if (!a || !bb) return;
     const p1 = termPos(a, w.a[1]), p2 = termPos(bb, w.b[1]);
+    // The path's midpoint x. wirePath() computes this internally, but the flow
+    // arrows below ride the same Manhattan route and need it too, so it stays
+    // declared here rather than being folded away with the path string.
+    const mx = (p1[0] + p2[0]) / 2;
     const wsel = i === selWire;
     h += '<path d="' + wirePath(p1, p2) + '" fill="none" stroke="' + (wsel ? acc : bds) +
       '" stroke-width="' + (wsel ? 3.2 : 1.6) + '" data-wire="' + i + '" style="cursor:pointer"/>';
@@ -11923,6 +11959,69 @@ function toggleAbout() {
   syncCanvasHeight(); // the row appearing/disappearing moves the canvas top
   onCanvasResize(); // ...and therefore changes its aspect
 }
+// ---- help panel ----
+// The app's interaction model had no permanent home. It shipped in #stat, which
+// the landing case's auto-run overwrites ~400ms later, and in 35 title
+// attributes that do not exist on touch, cannot be searched, and never appear
+// in a screenshot. So the one thing a new visitor needs was the one thing they
+// could not get.
+//
+// SHORTCUTS is the single source for the key list. smoke_test asserts every key
+// here also appears in the keydown handler, so the panel cannot quietly drift
+// from what the app actually does; a stale shortcut list is worse than none,
+// because someone trusts it.
+const SHORTCUTS = [
+  ['Ctrl+Z', 'Undo'],
+  ['Ctrl+Y', 'Redo'],
+  ['Ctrl+S', 'Save the circuit to a file'],
+  ['Ctrl+C', 'Copy the selected blocks'],
+  ['Ctrl+X', 'Cut the selected blocks'],
+  ['Ctrl+V', 'Paste (keeps the wiring between copied blocks)'],
+  ['Ctrl+D', 'Duplicate the selection in place'],
+  ['Ctrl+A', 'Select every block'],
+  ['/', 'Jump to the Find box'],
+  ['R', 'Rotate the selection 90 degrees'],
+  ['Arrows', 'Nudge the selection by 1 unit, or 10 with Shift'],
+  ['Delete', 'Delete the selected blocks or wire'],
+  ['Esc', 'Cancel a wire, close a popover, or clear the selection']
+];
+const CANVAS_HELP = [
+  ['Place a block', 'Open the Library, then click an item to drop it or drag it where you want it.'],
+  ['Wire two blocks', 'Click a terminal, then click another. A dashed preview follows the pointer; Esc cancels.'],
+  ['Edit a block', 'Click it. Parameters appear on the left, the physics and equations on the right.'],
+  ['Move things', 'Drag a block. Drag empty canvas to pan. Shift or Ctrl drag to rubber-band select.'],
+  ['Zoom', 'Scroll, or use the +/- buttons at the bottom right of the canvas.'],
+  ['Read a value', 'Hover a plot for a crosshair and the value of every signal at that instant.'],
+  ['Resize', 'Drag the tab under the canvas or under any plot. Double-click it to reset.'],
+  ['Every circuit needs', 'A Ground block, and a Probe on any node you want to plot.']
+];
+function buildHelp() {
+  const el = document.getElementById('helpbody');
+  if (!el) return;
+  el.innerHTML =
+    '<div class="help-col"><h3>On the canvas</h3><dl>'
+    + CANVAS_HELP.map(([k, v]) => '<dt>' + escAttr(k) + '</dt><dd>' + escAttr(v) + '</dd>').join('')
+    + '</dl></div>'
+    + '<div class="help-col"><h3>Keyboard</h3><dl>'
+    + SHORTCUTS.map(([k, v]) => '<dt><kbd>' + escAttr(k) + '</kbd></dt><dd>' + escAttr(v) + '</dd>').join('')
+    + '</dl></div>';
+}
+function toggleHelp() {
+  const el = document.getElementById('help');
+  const btn = document.getElementById('helpbtn');
+  if (!el) return;
+  const open = el.style.display === 'none' || !el.style.display;
+  if (open) buildHelp();
+  el.style.display = open ? 'flex' : 'none';
+  if (btn) btn.classList.toggle('on', open);
+}
+function closeHelp() {
+  const el = document.getElementById('help');
+  const btn = document.getElementById('helpbtn');
+  if (el) el.style.display = 'none';
+  if (btn) btn.classList.remove('on');
+}
+
 // "More" reveals the collapsed toolbar clusters on narrow screens. Not
 // persisted: unlike the rail toggles this is a peek at controls you are about
 // to use once, not a layout preference, and leaving it latched would put the

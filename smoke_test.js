@@ -5068,6 +5068,40 @@ console.log('gfm status:', els_stubs.stat.textContent);
  record('docs','every text token clears WCAG AA 4.5:1 on every surface, both themes', !fails.length);
 }
 
+// ---- the help panel's shortcut list matches the real handler ----
+// A stale shortcut list is worse than no shortcut list, because someone reads
+// it and trusts it. SHORTCUTS drives what the help panel renders, so this
+// asserts every key it advertises is actually handled in the keydown listener,
+// and that the listener has not grown a Ctrl-combo the panel never mentions.
+{
+ const fs=require('fs'), path=require('path');
+ const src=fs.readFileSync(path.join(__dirname,'src','ui.js'),'utf8');
+ const listed=[...(/const SHORTCUTS = \[([\s\S]*?)\n\];/.exec(src)||['',''])[1]
+   .matchAll(/\['([^']+)',/g)].map(m=>m[1]);
+ // the keydown listener, from its opening to the end of that call
+ const hStart=src.indexOf("document.addEventListener('keydown'");
+ const handler=src.slice(hStart, src.indexOf('\n});', hStart));
+ const missing=[];
+ listed.forEach(s=>{
+  const k=s.replace(/^Ctrl\+/,'').toLowerCase();
+  let re;
+  if(/^ctrl\+/i.test(s)) re=new RegExp("k === '"+k+"'|key\\.toLowerCase\\(\\) === '"+k+"'");
+  else if(s==='Arrows') re=/e\.key\.startsWith\('Arrow'\)/;
+  else if(s==='Delete') re=/e\.key === 'Delete'/;
+  else if(s==='Esc') re=/e\.key === 'Escape'/;
+  else if(s==='R') re=/key\.toLowerCase\(\) === 'r'/;
+  else re=new RegExp("e\\.key === '"+s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+"'");
+  if(!re.test(handler)) missing.push(s);
+ });
+ // the reverse direction: a Ctrl combo handled but never advertised
+ const handled=[...handler.matchAll(/k === '([a-z])'/g)].map(m=>'Ctrl+'+m[1].toUpperCase());
+ const undocumented=handled.filter(s=>!listed.includes(s));
+ const ok=!missing.length&&!undocumented.length;
+ if(!ok) console.log('  shortcuts: advertised but not handled='+JSON.stringify(missing)
+   +' handled but not advertised='+JSON.stringify(undocumented));
+ record('docs','help panel shortcut list matches the keydown handler', ok);
+}
+
 // ---- no em/en dashes in user-visible text ----
 // CLAUDE.md bans them from anything user-facing. Code comments are exempt (they
 // are not a deliverable), so this has to tell the two apart rather than grep the
