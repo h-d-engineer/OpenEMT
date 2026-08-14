@@ -4717,6 +4717,12 @@ function renderPlots() {
       + '<div class="cnvwrap2"><canvas class="plot" id="pcv-' + pl.id + '" height="' + plotHeight(pl)
       + '" style="height:' + plotHeight(pl) + 'px"></canvas>'
       + '<div class="selbox" id="selbox-' + pl.id + '"></div>'
+      // Data cursor: a hairline and a value readout, both plain DOM overlays
+      // rather than anything drawn into the canvas. Drawing them on the canvas
+      // would mean repainting every trace on every pointermove, which is the
+      // cost that made canvas dragging stutter at 147 blocks.
+      + '<div class="pcur" id="pcur-' + pl.id + '"></div>'
+      + '<div class="pread" id="pread-' + pl.id + '"></div>'
       + '<div class="plotgrip" data-plot="' + pl.id + '" title="Drag to resize this plot (double-click to reset)"></div></div>'
       + '<div class="hint" id="pleg-' + pl.id + '"></div></div>';
   });
@@ -4962,6 +4968,60 @@ function drawOnePlot(pl, dark) {
 // the conventional way 3-phase power is quoted, not per-phase like current.
 function phaseLabel(d) { return d.dc ? 'DC' : (d.phase == null ? '' : PH_LBL[d.phase]); }
 
+// ---- data cursor ----
+// "What is the voltage at t = 34 ms" is the question a transient simulator
+// exists to answer, and until this the only way to get it was to export CSV and
+// open a spreadsheet. A hairline at the nearest stored sample plus a readout of
+// every visible series at that instant answers it in place.
+//
+// Snapped to a real sample, never interpolated: the value shown is one the
+// solver actually produced, so it agrees with the CSV export to the last digit.
+// At a coarse plot step the hairline visibly steps between samples, which is
+// honest about the resolution rather than inventing points between them.
+function hideCursor(pl) {
+  const cur = document.getElementById('pcur-' + pl.id);
+  const rd = document.getElementById('pread-' + pl.id);
+  if (cur) cur.style.display = 'none';
+  if (rd) rd.style.display = 'none';
+}
+function showCursor(pl, c, xCss) {
+  const cur = document.getElementById('pcur-' + pl.id);
+  const rd = document.getElementById('pread-' + pl.id);
+  const g = c && c._geom;
+  if (!cur || !rd) return;
+  // No geometry means no axes (empty plot); no live.t means nothing was run.
+  if (!g || !live || !live.t || !live.t.length) { hideCursor(pl); return; }
+  const plotW = g.W - g.leftPad - g.rightPad;
+  if (plotW <= 0 || xCss < g.leftPad || xCss > g.W - g.rightPad) { hideCursor(pl); return; }
+  const t = g.t0 + (xCss - g.leftPad) / plotW * (g.t1 - g.t0);
+  // Nearest sample within the drawn window. Linear scan over the window bounds
+  // rather than a binary search: the window is already index-bounded and this
+  // runs once per pointermove, not per frame of an animation.
+  const { i0, i1 } = windowBounds({ t0: g.t0, t1: g.t1 });
+  let bi = i0, bd = Infinity;
+  for (let i = i0; i <= i1; i++) { const d = Math.abs(live.t[i] - t); if (d < bd) { bd = d; bi = i; } }
+  const ts = live.t[bi];
+  const x = g.leftPad + plotW * (ts - g.t0) / ((g.t1 - g.t0) || 1);
+  cur.style.display = 'block';
+  cur.style.left = Math.round(x) + 'px';
+  cur.style.height = g.H + 'px';
+  const series = plotSeries(pl);
+  let h = '<span class="pr-t">t = ' + ts.toFixed(3) + ' ms</span>';
+  if (!series.length) h += '<span class="pr-s">No signals on this plot.</span>';
+  series.forEach(s => {
+    const v = s.samples[bi];
+    h += '<span class="pr-s"><span class="pr-sw" style="background:' + s.color + '"></span>'
+      + escAttr(seriesLabel(s)) + ' <b>' + (v === undefined ? '—' : sciNum(v, 4)) + '</b></span>';
+  });
+  rd.innerHTML = h;
+  rd.style.display = 'block';
+  // Flip to the left of the hairline when it would otherwise run off the card,
+  // and clamp to the top so a tall readout on a short plot stays readable.
+  const w = rd.offsetWidth, hh = rd.offsetHeight;
+  rd.style.left = Math.round(x + 12 + w > g.W ? Math.max(0, x - 12 - w) : x + 12) + 'px';
+  rd.style.top = Math.round(Math.max(0, Math.min(8, g.H - hh))) + 'px';
+}
+
 // Drag = box-select a time range to zoom into (rubber-band overlay, all
 // plots share one time window — SPEC §3). Shift+drag = pan the current
 // window. Wheel = zoom in/out centered on the cursor's time, like the
@@ -5026,6 +5086,17 @@ function bindPlotInteractions() {
         drag.lastY = p.y;
       } else showBand({ x: drag.x0, y: drag.y0 }, p);
     });
+    // Data cursor. Separate listener from the drag one above so the two stay
+    // independent: the drag handler returns early when there is no drag, which
+    // is exactly when the cursor should be live.
+    c.addEventListener('pointermove', e => {
+      if (drag) { hideCursor(pl); return; } // the zoom band owns the pointer
+      showCursor(pl, c, local(e).x);
+    });
+    c.addEventListener('pointerleave', () => hideCursor(pl));
+    // A touch drag is a pan/zoom gesture, not a hover; leaving a cursor stuck
+    // on screen after the finger lifts is worse than not showing one.
+    c.addEventListener('pointerdown', e => { if (e.pointerType === 'touch') hideCursor(pl); });
     const endDrag = e => {
       if (!drag) return;
       const wasSelect = drag.mode === 'select', a = drag;

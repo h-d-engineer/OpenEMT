@@ -132,6 +132,20 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
   border:1px solid var(--acc);pointer-events:none}
 .emt .selbox.sx{border-top-color:transparent;border-bottom-color:transparent}
 .emt .selbox.sy{border-left-color:transparent;border-right-color:transparent}
+/* Data cursor. Both overlays are pointer-events:none so they never intercept
+   the zoom drag underneath them, and both are hidden until a pointer is
+   actually over a plot with data. */
+.emt .pcur{position:absolute;top:0;width:1px;display:none;pointer-events:none;
+  background:var(--tx3);z-index:14}
+.emt .pread{position:absolute;display:none;pointer-events:none;z-index:15;
+  background:var(--sfc);border:1px solid var(--bds);border-radius:7px;padding:5px 8px;
+  box-shadow:0 4px 16px rgba(0,0,0,.22);font-size:11.5px;line-height:1.5;color:var(--tx2);
+  white-space:nowrap;max-width:260px;overflow:hidden}
+.emt .pread b{color:var(--tx);font-weight:600;font-variant-numeric:tabular-nums}
+.emt .pread .pr-t{color:var(--tx);font-weight:600;display:block;margin-bottom:2px;
+  font-variant-numeric:tabular-nums}
+.emt .pread .pr-s{display:block}
+.emt .pread .pr-sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px}
 .emt .plotgrip{bottom:-5px}
 .emt .zmode{display:inline-flex}
 .emt .zmode button{font-size:10px;padding:2px 7px;border:1px solid var(--bd);border-radius:0;
