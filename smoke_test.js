@@ -4992,4 +4992,80 @@ console.log('gfm status:', els_stubs.stat.textContent);
  record('docs','VALIDATION.md scoreboard triages every DEFS block exactly once', ok);
 }
 
+// ---- colour contrast (WCAG AA) ----
+// Every string this app renders is under 18.66px, so none of it qualifies for
+// the 3:1 large-text allowance: 4.5:1 is the floor for all of it. The audit on
+// 2026-08-13 found --tx3 at 3.12:1 on the light body background (where #stat
+// prints every solver error), and white-on-accent at 2.86:1 in dark mode on the
+// filled .on toggles. Both had shipped, both looked fine to the eye, and
+// neither was catchable by reading the stylesheet.
+//
+// So this recomputes the ratios from src/shell.html rather than trusting a
+// number in a comment. Deliberately parses the SOURCE tokens, not a rendered
+// page: the point is to fail the build before a lighter grey is published, and
+// smoke_test has no browser.
+{
+ const fs=require('fs'), path=require('path');
+ const css=fs.readFileSync(path.join(__dirname,'src','shell.html'),'utf8');
+ // relative luminance, WCAG 2.1
+ const lum=h=>{const c=[1,3,5].map(i=>parseInt(h.substr(i,2),16)/255)
+   .map(v=>v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4));
+  return 0.2126*c[0]+0.7152*c[1]+0.0722*c[2];};
+ const cr=(a,b)=>{const l1=lum(a),l2=lum(b);
+  return (Math.max(l1,l2)+0.05)/(Math.min(l1,l2)+0.05);};
+ // Token blocks: the light set on .emt{...}, the dark set in the media query.
+ // Body background is its own rule (the .emt tokens do not cover it) and is a
+ // real text surface: .sub, .statusline and the trailing .hint all sit on it.
+ const tok=(block,name)=>{const m=new RegExp('--'+name+':(#[0-9a-f]{6})').exec(block);
+  return m&&m[1];};
+ // The light block is anchored to the start of a line; the dark one only ever
+ // appears nested inside the media query, so it can never be mid-line. Without
+ // the anchor the light pattern happily matched the dark block's inner .emt{},
+ // and the guard then failed loudly but for a fabricated reason (it reported
+ // "light --tx 1.04:1" when the real fault was a parse fall-through). A guard
+ // whose message points at the wrong thing costs more than it saves.
+ const lightBlk=(/^\.emt\{--sfc:[^}]*\}/m.exec(css)||[''])[0];
+ const darkBlk=(/@media\(prefers-color-scheme:dark\)\{\.emt\{--sfc:[^}]*\}\}/.exec(css)||[''])[0];
+ const lightBody=(/body\{[^}]*background:(#[0-9a-f]{6})/.exec(css)||[])[1];
+ const darkBody=(/@media\(prefers-color-scheme:dark\)\{body\{background:(#[0-9a-f]{6})\}\}/.exec(css)||[])[1];
+ const fails=[];
+ [['light',lightBlk,lightBody],['dark',darkBlk,darkBody]].forEach(([theme,blk,body])=>{
+  const t=n=>tok(blk,n);
+  if(!blk||!body||!t('sfc')){fails.push(theme+': could not parse the token block');return;}
+  const surfaces={body:body,sfc1:t('sfc1'),sfc:t('sfc')};
+  // Body text tokens render on all three surfaces; the worst pairing decides.
+  ['tx','tx2','tx3'].forEach(n=>{
+   Object.entries(surfaces).forEach(([sn,s])=>{
+    const r=cr(t(n),s);
+    if(r<4.5) fails.push(theme+' --'+n+' '+t(n)+' on '+sn+' '+s+': '+r.toFixed(2)+':1');
+   });
+  });
+  // --acc as TEXT only ever renders inside a --sfc panel (.sci summary,
+  // .libgroup>summary, .scisub b), so --sfc is the surface that governs it.
+  // It is intentionally NOT checked against the body background: no accent
+  // text sits there, and requiring it would force a much darker blue.
+  const ra=cr(t('acc'),surfaces.sfc);
+  if(ra<4.5) fails.push(theme+' --acc '+t('acc')+' as text on --sfc: '+ra.toFixed(2)+':1');
+  // Filled chip: label on fill must clear 4.5, and the fill must be separable
+  // from the panel behind it (3:1, the UI-component threshold).
+  const rl=cr(t('acct'),t('accf'));
+  if(rl<4.5) fails.push(theme+' --acct on --accf (filled .on label): '+rl.toFixed(2)+':1');
+  const rb=cr(t('accf'),surfaces.sfc);
+  if(rb<3) fails.push(theme+' --accf against --sfc (chip boundary): '+rb.toFixed(2)+':1');
+  // The notice band: error and warning text on their own tinted grounds. This
+  // is the one place a user reads a full paragraph explaining what is wrong
+  // with their circuit, so it gets checked like everything else.
+  [['err','errbg'],['warn','warnbg']].forEach(([fg,bg])=>{
+   const r=cr(t(fg),t(bg));
+   if(r<4.5) fails.push(theme+' --'+fg+' on --'+bg+' (notice band): '+r.toFixed(2)+':1');
+   // The band's border is currentColor, so the same token also has to separate
+   // the band from the page behind it.
+   const rr2=cr(t(fg),surfaces.body);
+   if(rr2<3) fails.push(theme+' --'+fg+' border against the page: '+rr2.toFixed(2)+':1');
+  });
+ });
+ if(fails.length) fails.forEach(f=>console.log('  contrast: '+f));
+ record('docs','every text token clears WCAG AA 4.5:1 on every surface, both themes', !fails.length);
+}
+
 summary();

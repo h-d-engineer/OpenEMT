@@ -357,6 +357,124 @@ primitive, subtransient syncgen).
   stories fall flat on it (documented in DECISIONS.md). A case where frequency
   actually moves would let the grid-forming fast-response benefit show.
 
+## Usability and interface
+
+From a measured audit of the shipped app on 2026-08-13 (build c165506, v0.1.1)
+at 1280x720 and 375x812. Every number below was read off the live page with
+`getBoundingClientRect` and computed-style inspection, not estimated. Until this
+audit the whole backlog was solver, importer and physics work, with no interface
+item in it at all.
+
+The framing that came out of it: the *content* in this app is ahead of tools
+costing five figures a seat (the solver errors name the offending block and the
+fix, the science rail is real teaching material, the verification tier is
+honest), and almost none of it is delivered where a person can receive it. So
+most of the work is moving existing quality into the user's field of view rather
+than adding features. Ordered in four phases by how many users each reaches.
+
+*Phase 1, make the run/look/adjust loop visible (the whole point of the tool):*
+
+- **The result of pressing Run is off screen.** At 1280x720 the first plot
+  starts at y=771 and the plot toolbar at exactly 720; on a phone the first plot
+  is at y=1111 in a 902px viewport. 250px of chrome sits above the canvas (title
+  24, subtitle 32, toolbar 124 across four wrapped rows, status 26). A run
+  completes and the only visible change is one line of grey text. Reclaim the
+  vertical budget (subtitle behind an info affordance, title inline with the
+  toolbar, toolbar toward two rows, target under 120px) and get the canvas and
+  first plot co-visible.
+- **No way to read a value off a plot.** Zero hover handlers on the plot
+  canvases: no data cursor, no crosshair, no readout. "What is the voltage at
+  t = 34 ms" is the most common question anyone asks a transient simulator and
+  the only answer today is a CSV export. Everything needed exists already (zoom,
+  legend, per-plot `_geom`); only the readout is missing.
+- **`--tx3` fails WCAG AA in both themes.** 3.59:1 on white, 3.26:1 on `--sfc1`,
+  3.79:1 on the dark card, against 4.5:1 required for text under 18.66px. It is
+  the colour of `#stat` where every solver error appears (12px), the subtitle
+  (12px), the `.tcl-l` cluster labels (9px), and every `.hint` block, which is
+  where all the per-block physics writing lives (11px). `--acc` is marginal too
+  at 4.42:1 on white and sets the science summary text.
+- **Errors share a channel with progress text.** The solver's diagnostics are a
+  genuine competitive advantage and they render in the same 12px grey line that
+  says "Running... 40%". They need their own persistent, dismissable region, and
+  it must carry the full message rather than truncating it into a toast.
+- **The app explains itself in a message that self-destructs.** `#stat` ships
+  with the only description of the interaction model anywhere in the UI (wiring,
+  panning, rotate, find). `loadDemo` auto-runs on a 400 ms timer and overwrites
+  it. `loadDemo(autorun=false)` already exists solely so a bad `?example=` link
+  keeps its explanation on screen, for exactly this reason; the general case was
+  never covered.
+
+*Phase 2, make the "runs on your phone" claim true (it is the launch
+differentiator and currently the weakest surface):*
+
+- **Wire terminals are a 5.6 by 5.6 CSS pixel target on a phone.** The canvas
+  renders at scale 0.507 at 375px, so the r=5.5 user-unit terminal circles come
+  out at 5.6px; a whole block is 46 by 26. The touch standard is 44 by 44. Give
+  terminals a transparent hit circle sized in CSS pixels rather than user units
+  so it holds at any zoom.
+- **All 30 toolbar controls are under 44px tall, smallest 21px**, and the
+  toolbar is 363px across five wrapped rows. 70% of the first phone screen (627
+  of 902px) is furniture before the schematic starts. Collapse to Run, Power
+  flow, Library and Examples with the rest behind an overflow control, and add a
+  sticky Run so the primary verb is always reachable.
+- **The rails cover the canvas they annotate.** On a 345px canvas the science
+  rail is 241px (70%), params 217px (63%), library 189px (55%). The floating
+  drawer model is right on a monitor and wrong on a phone, where these want to
+  be bottom sheets under 760px. They also overflow outright: with the Library
+  open and a block selected, `.emt.lib .props` sits at `left:184px` and is
+  196px wide, so it reaches 380px on a 375px viewport and gives the page a
+  horizontal scrollbar. Measured 2026-08-13 and confirmed to predate the Phase
+  1 work; left alone deliberately, since the bottom-sheet rework replaces this
+  geometry rather than adjusting it.
+- Acceptance test, on real hardware rather than an emulator: place three blocks,
+  wire them, ground it, and run, without pinch zooming.
+
+*Phase 3, make it fast to build (serves the person who decided to stay):*
+
+- **No copy, paste, or duplicate.** A ten-bus feeder is ten trips to the library
+  plus ten rounds of retyping. For a tool shipping a 39-bus example this is the
+  largest throughput gap. Shortcuts today are Ctrl+Z, Ctrl+Y, `/`, R, Delete and
+  Escape; missing are Ctrl+S, Ctrl+C/V, Ctrl+A and arrow-key nudge.
+- **Wiring gives almost nothing to go on.** Terminals get a crosshair cursor,
+  which does not exist on touch, and no hover state. After the first click no
+  line follows the pointer, so there is no sign you are mid-wire; clicking empty
+  canvas cancels silently.
+- **`clearAll()` silently flips the convention from phase to line-to-line.** The
+  choice is deliberate per SPEC section 2, but nothing tells the user, so
+  clearing and rebuilding the same circuit with the same typed numbers is off by
+  root three with no other symptom. That is a named trap in CLAUDE.md reachable
+  by pressing a button labelled Clear. Clear should also announce that it
+  emptied the canvas and that Undo restores it (`pushHistory` already runs).
+- **No empty state, and a stale status line.** After Clear the SVG has zero
+  children and `#stat` still reports the previous solve ("Solved: 3 nodes ...
+  2,400 steps") on an empty canvas.
+- **The manual lives in 35 `title` attributes.** Plot step, PH versus LL, Init
+  from PF: all load-bearing, all invisible on touch, unsearchable, and absent
+  from every screenshot. Promote the important ones to visible help; keep the
+  tooltips as well.
+
+*Phase 4, convert users into contributors (the stated goal of the launch):*
+
+- **The verification tier is a recruiting line that ends in a full stop.** The
+  science rail already tells the user no block has been cross-checked against a
+  commercial EMT program. Anyone reading that sentence who holds a PSCAD or
+  PSS/E seat is exactly the contributor being sought, and they are reading it at
+  the moment they care. Link it to the block-validation issue template.
+- **Closing the tab discards unsaved work silently.** The dirty flag and its
+  bullet marker already exist; nothing acts on them and there is no
+  `beforeunload` guard, no autosave, no recovery.
+- **The Layout dialog mostly says no.** Two of three options are disabled with
+  an honest explanation. Being honest is right; showing a dialog whose main
+  content is two refusals is not. Apply Best fit straight from the toolbar and
+  bring the dialog back when the other layouts work (see the section above).
+
+Explicitly *not* planned, so it does not creep in: a docked multi-pane IDE
+layout (the floating-drawer model suits a single-file app and needs a responsive
+variant, not a rewrite), a modal tour or onboarding wizard (the auto-running
+demo is a better first impression; fix where its output lands), and anything
+touching the solver (every item here lives in `src/ui.js` and `src/shell.html`,
+so the API and MCP frontends are unaffected).
+
 ## Auto-layout follow-ups
 
 - **Teach `busAwareLayout()` to transpose for top-to-bottom.** It currently has

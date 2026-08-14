@@ -271,6 +271,13 @@ function rotateSelected() {
 }
 document.addEventListener('keydown', e => {
   const tag = (e.target.tagName || '').toLowerCase();
+  // Escape closes the numerics popover BEFORE the typing guard below, because
+  // the popover contains number inputs: checking after it would make Escape
+  // dead exactly when the focus is inside the thing you want to dismiss.
+  if (e.key === 'Escape') {
+    const pop = document.getElementById('simadv');
+    if (pop && pop.style.display !== 'none') { e.preventDefault(); closeSimAdv(); return; }
+  }
   if (tag === 'input' || tag === 'textarea' || tag === 'select') return; // don't hijack typing
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
@@ -1216,7 +1223,7 @@ function onCanvasResize() {
   render();
 }
 document.addEventListener('fullscreenchange', onCanvasResize);
-window.addEventListener('resize', () => { onCanvasResize(); drawAllPlots(); });
+window.addEventListener('resize', () => { syncCanvasHeight(); onCanvasResize(); drawAllPlots(); });
 
 // ---- canvas height: drag the grip on the bottom edge (SPEC §3). Wide/
 // fullscreen only ever changed the WIDTH, so on a tall screen the schematic
@@ -1228,9 +1235,34 @@ window.addEventListener('resize', () => { onCanvasResize(); drawAllPlots(); });
 // the other layout preferences; double-click clears it so the stylesheet's
 // height (which is responsive: 460px, 380px under 760px wide) takes over again.
 const CNV_H_MIN = 200, CNV_H_MAX = 2000;
+// Space the plots need below the canvas before any waveform is visible: the
+// plots toolbar, one plot card's header, and enough plot canvas to read a
+// trace, plus the margins between them. Used to size the canvas so that
+// pressing Run changes something the user can actually see.
+const PLOT_RESERVE = 210;
+// Auto canvas height, used only when the user has not dragged the grip.
+//
+// The stylesheet's flat 460px was set without reference to the window, and on a
+// 1280x720 laptop it put the first plot at y=771: the whole output of the tool
+// lived below the fold, so a run finished with no visible change anywhere on
+// screen. Deriving the height from the viewport instead keeps the generous
+// canvas on a tall monitor (it clamps back to 460) and trades some schematic
+// height for a visible waveform on a short one. A persisted grip height always
+// wins: an explicit choice outranks this.
+function autoCanvasHeight() {
+  const wrap = document.querySelector('.cnvwrap');
+  if (!wrap || !window.innerHeight) return null;
+  const top = wrap.getBoundingClientRect().top + window.scrollY;
+  const h = Math.round(window.innerHeight - top - PLOT_RESERVE);
+  // Floor at 280 rather than CNV_H_MIN: 200px is a legitimate thing to drag
+  // down to by hand, but it is too cramped to hand someone on arrival.
+  return Math.max(280, Math.min(460, h));
+}
 function syncCanvasHeight() {
   const h = +localStorage.getItem('emt_cnvh');
-  cnv.style.height = (h >= CNV_H_MIN && h <= CNV_H_MAX) ? h + 'px' : '';
+  if (h >= CNV_H_MIN && h <= CNV_H_MAX) { cnv.style.height = h + 'px'; return; }
+  const auto = autoCanvasHeight();
+  cnv.style.height = auto ? auto + 'px' : '';
 }
 function bindCanvasResizer() {
   const grip = document.getElementById('cnvgrip');
@@ -1256,9 +1288,13 @@ function bindCanvasResizer() {
   };
   grip.addEventListener('pointerup', end);
   grip.addEventListener('pointercancel', end);
+  // Double-click clears the persisted height and hands the canvas back to
+  // autoCanvasHeight(), which is what "reset" now means. Clearing the inline
+  // style instead would restore the stylesheet's flat 460px, i.e. the very
+  // value that put the plots below the fold.
   grip.addEventListener('dblclick', () => {
     localStorage.removeItem('emt_cnvh');
-    cnv.style.height = '';
+    syncCanvasHeight();
     onCanvasResize();
   });
 }
@@ -3794,6 +3830,58 @@ function toggleScience() {
   localStorage.setItem('emt_sci', on ? '1' : '0');
   syncScienceUI();
 }
+// The description paragraph under the title. Shown by DEFAULT (absent key), not
+// hidden: it is the only thing on the page that says what OpenEMT is and that
+// results are not certified, so a first-time visitor must get it. Once
+// dismissed the choice sticks, which is what buys back the 44px of height that
+// pushed the plots below the fold for the people who already know.
+// Note the polarity is the inverse of the rail toggles above: those persist "1"
+// for shown, this persists "1" for HIDDEN, because the default differs.
+function syncAboutUI() {
+  const el = document.getElementById('about');
+  const btn = document.getElementById('infobtn');
+  const hidden = localStorage.getItem('emt_about') === '1';
+  if (el) el.hidden = hidden;
+  if (btn) btn.classList.toggle('on', !hidden);
+}
+function toggleAbout() {
+  const hidden = localStorage.getItem('emt_about') !== '1'; // flip
+  localStorage.setItem('emt_about', hidden ? '1' : '0');
+  syncAboutUI();
+  syncCanvasHeight(); // the row appearing/disappearing moves the canvas top
+  onCanvasResize(); // ...and therefore changes its aspect
+}
+// Numerics popover (time step, plot step, flow arrows), anchored under its gear
+// button. Not persisted: it is a transient panel, not a layout preference.
+function toggleSimAdv(ev) {
+  const pop = document.getElementById('simadv');
+  const btn = document.getElementById('simadvbtn');
+  if (!pop || !btn) return;
+  const open = pop.style.display === 'none';
+  pop.style.display = open ? 'flex' : 'none';
+  btn.classList.toggle('on', open);
+  if (open) {
+    // Position relative to .emt, which is the nearest positioned ancestor.
+    const host = document.querySelector('.emt').getBoundingClientRect();
+    const b = btn.getBoundingClientRect();
+    pop.style.top = (b.bottom - host.top + 6) + 'px';
+    // Keep it on screen when the gear sits near the right edge.
+    pop.style.left = Math.max(0, Math.min(b.left - host.left, host.width - 240)) + 'px';
+  }
+  if (ev) ev.stopPropagation();
+}
+function closeSimAdv() {
+  const pop = document.getElementById('simadv');
+  const btn = document.getElementById('simadvbtn');
+  if (pop && pop.style.display !== 'none') { pop.style.display = 'none'; if (btn) btn.classList.remove('on'); }
+}
+// Dismiss on an outside click or Escape, the two things every popover must do.
+document.addEventListener('mousedown', e => {
+  const pop = document.getElementById('simadv');
+  if (!pop || pop.style.display === 'none') return;
+  if (pop.contains(e.target) || e.target.closest('#simadvbtn')) return;
+  closeSimAdv();
+});
 
 // ---- save / load ----
 // Run settings travel WITH the circuit. Without this a case whose first event
@@ -3899,9 +3987,9 @@ function loadCircuit(file) {
   rd.onload = () => {
     const stat = document.getElementById('stat');
     let d;
-    try { d = JSON.parse(rd.result); } catch { stat.textContent = 'Load failed: not valid JSON.'; return; }
+    try { d = JSON.parse(rd.result); } catch { showError('Load failed: that file is not valid JSON.'); return; }
     const res = applyCircuit(d, file.name);
-    if (res.err) { stat.textContent = 'Load failed: ' + res.err; return; }
+    if (res.err) { showError('Load failed: ' + res.err); return; }
     stat.textContent = 'Loaded ' + file.name + ': ' + S.blocks.length + ' blocks, ' + S.wires.length + ' wires.'
       + (d.sim ? ' Run settings from file: ' + document.getElementById('duration').value + ' ms at '
         + document.getElementById('dtus').value + ' µs.' : '')
@@ -3926,9 +4014,9 @@ function loadExampleByName(name) {
   const stat = document.getElementById('stat');
   if (!name) return false;
   const d = EXAMPLES[name];
-  if (!d) { stat.textContent = 'No such example: ' + name + '.'; return false; }
+  if (!d) { showError('No such example: ' + name + '.'); return false; }
   const res = applyCircuit(JSON.parse(JSON.stringify(d)), name + '.json');
-  if (res.err) { stat.textContent = 'Could not open ' + name + ': ' + res.err; return false; }
+  if (res.err) { showError('Could not open ' + name + ': ' + res.err); return false; }
   loadedExample = name; // after applyCircuit: its touchModel() clears this
   fitView();
   render();
@@ -3949,8 +4037,8 @@ function loadExampleByName(name) {
 function copyCaseLink() {
   const stat = document.getElementById('stat');
   if (!loadedExample) {
-    stat.textContent = 'Only the shipped examples have a shareable link, and this circuit is not one '
-      + '(or has been edited since it was opened). Use Save to send the .json file instead.';
+    showWarn('Only the shipped examples have a shareable link, and this circuit is not one '
+      + '(or has been edited since it was opened). Use Save to send the .json file instead.');
     return;
   }
   const pf = !!(document.getElementById('pfinit') || {}).checked;
@@ -4012,9 +4100,9 @@ function importCircuit(file) {
   rd.onload = () => {
     const stat = document.getElementById('stat');
     const res = importCase(rd.result, file.name);
-    if (res.err) { stat.textContent = 'Import failed: ' + res.err; return; }
+    if (res.err) { showError('Import failed: ' + res.err); return; }
     const ap = applyCircuit(res.circuit, file.name);
-    if (ap.err) { stat.textContent = 'Import failed: ' + ap.err; return; }
+    if (ap.err) { showError('Import failed: ' + ap.err); return; }
     // Imported circuits have only a coarse grid layout; tidy them like the user
     // would with the Layout dialog, then frame the whole network.
     try { doHierarchicalLayout('fit'); } catch (e) { fitView(); }
@@ -4629,6 +4717,12 @@ function renderPlots() {
       + '<div class="cnvwrap2"><canvas class="plot" id="pcv-' + pl.id + '" height="' + plotHeight(pl)
       + '" style="height:' + plotHeight(pl) + 'px"></canvas>'
       + '<div class="selbox" id="selbox-' + pl.id + '"></div>'
+      // Data cursor: a hairline and a value readout, both plain DOM overlays
+      // rather than anything drawn into the canvas. Drawing them on the canvas
+      // would mean repainting every trace on every pointermove, which is the
+      // cost that made canvas dragging stutter at 147 blocks.
+      + '<div class="pcur" id="pcur-' + pl.id + '"></div>'
+      + '<div class="pread" id="pread-' + pl.id + '"></div>'
       + '<div class="plotgrip" data-plot="' + pl.id + '" title="Drag to resize this plot (double-click to reset)"></div></div>'
       + '<div class="hint" id="pleg-' + pl.id + '"></div></div>';
   });
@@ -4874,6 +4968,91 @@ function drawOnePlot(pl, dark) {
 // the conventional way 3-phase power is quoted, not per-phase like current.
 function phaseLabel(d) { return d.dc ? 'DC' : (d.phase == null ? '' : PH_LBL[d.phase]); }
 
+// ---- notice band (errors and warnings) ----
+// The solver's diagnostics are the best writing in this project: they name the
+// offending block by id, explain the physical cause, and give the fix. They
+// used to be assigned to #stat, the same one-line strip that carries
+// "Running... 40%" and the solve summary, so a modelling mistake arrived in the
+// same 12px of grey as routine progress and, once that line became single-line,
+// was truncated with an ellipsis.
+//
+// showError/showWarn put the FULL text in a wrapping, colour-coded band that
+// stays until it is dismissed or replaced. Never truncate here: the second half
+// of "...set Fov and Fuv to 0, or place this relay on a full 3-phase node" is
+// the half that tells you what to do.
+function setNotice(msg, level) {
+  const box = document.getElementById('notice');
+  const lab = document.getElementById('noticelab');
+  const txt = document.getElementById('noticemsg');
+  if (!box || !txt) return;
+  txt.textContent = msg;
+  if (lab) lab.textContent = level === 'warn' ? 'Warning' : 'Cannot run this circuit';
+  box.className = 'notice on ' + (level === 'warn' ? 'warn' : 'err');
+  syncCanvasHeight(); onCanvasResize(); // the band changes the canvas top
+}
+function showError(msg) { setNotice(msg, 'err'); }
+function showWarn(msg) { setNotice(msg, 'warn'); }
+function clearNotice() {
+  const box = document.getElementById('notice');
+  if (!box || !box.classList.contains('on')) return;
+  box.className = 'notice';
+  syncCanvasHeight(); onCanvasResize();
+}
+
+// ---- data cursor ----
+// "What is the voltage at t = 34 ms" is the question a transient simulator
+// exists to answer, and until this the only way to get it was to export CSV and
+// open a spreadsheet. A hairline at the nearest stored sample plus a readout of
+// every visible series at that instant answers it in place.
+//
+// Snapped to a real sample, never interpolated: the value shown is one the
+// solver actually produced, so it agrees with the CSV export to the last digit.
+// At a coarse plot step the hairline visibly steps between samples, which is
+// honest about the resolution rather than inventing points between them.
+function hideCursor(pl) {
+  const cur = document.getElementById('pcur-' + pl.id);
+  const rd = document.getElementById('pread-' + pl.id);
+  if (cur) cur.style.display = 'none';
+  if (rd) rd.style.display = 'none';
+}
+function showCursor(pl, c, xCss) {
+  const cur = document.getElementById('pcur-' + pl.id);
+  const rd = document.getElementById('pread-' + pl.id);
+  const g = c && c._geom;
+  if (!cur || !rd) return;
+  // No geometry means no axes (empty plot); no live.t means nothing was run.
+  if (!g || !live || !live.t || !live.t.length) { hideCursor(pl); return; }
+  const plotW = g.W - g.leftPad - g.rightPad;
+  if (plotW <= 0 || xCss < g.leftPad || xCss > g.W - g.rightPad) { hideCursor(pl); return; }
+  const t = g.t0 + (xCss - g.leftPad) / plotW * (g.t1 - g.t0);
+  // Nearest sample within the drawn window. Linear scan over the window bounds
+  // rather than a binary search: the window is already index-bounded and this
+  // runs once per pointermove, not per frame of an animation.
+  const { i0, i1 } = windowBounds({ t0: g.t0, t1: g.t1 });
+  let bi = i0, bd = Infinity;
+  for (let i = i0; i <= i1; i++) { const d = Math.abs(live.t[i] - t); if (d < bd) { bd = d; bi = i; } }
+  const ts = live.t[bi];
+  const x = g.leftPad + plotW * (ts - g.t0) / ((g.t1 - g.t0) || 1);
+  cur.style.display = 'block';
+  cur.style.left = Math.round(x) + 'px';
+  cur.style.height = g.H + 'px';
+  const series = plotSeries(pl);
+  let h = '<span class="pr-t">t = ' + ts.toFixed(3) + ' ms</span>';
+  if (!series.length) h += '<span class="pr-s">No signals on this plot.</span>';
+  series.forEach(s => {
+    const v = s.samples[bi];
+    h += '<span class="pr-s"><span class="pr-sw" style="background:' + s.color + '"></span>'
+      + escAttr(seriesLabel(s)) + ' <b>' + (v === undefined ? '—' : sciNum(v, 4)) + '</b></span>';
+  });
+  rd.innerHTML = h;
+  rd.style.display = 'block';
+  // Flip to the left of the hairline when it would otherwise run off the card,
+  // and clamp to the top so a tall readout on a short plot stays readable.
+  const w = rd.offsetWidth, hh = rd.offsetHeight;
+  rd.style.left = Math.round(x + 12 + w > g.W ? Math.max(0, x - 12 - w) : x + 12) + 'px';
+  rd.style.top = Math.round(Math.max(0, Math.min(8, g.H - hh))) + 'px';
+}
+
 // Drag = box-select a time range to zoom into (rubber-band overlay, all
 // plots share one time window — SPEC §3). Shift+drag = pan the current
 // window. Wheel = zoom in/out centered on the cursor's time, like the
@@ -4938,6 +5117,17 @@ function bindPlotInteractions() {
         drag.lastY = p.y;
       } else showBand({ x: drag.x0, y: drag.y0 }, p);
     });
+    // Data cursor. Separate listener from the drag one above so the two stay
+    // independent: the drag handler returns early when there is no drag, which
+    // is exactly when the cursor should be live.
+    c.addEventListener('pointermove', e => {
+      if (drag) { hideCursor(pl); return; } // the zoom band owns the pointer
+      showCursor(pl, c, local(e).x);
+    });
+    c.addEventListener('pointerleave', () => hideCursor(pl));
+    // A touch drag is a pan/zoom gesture, not a hover; leaving a cursor stuck
+    // on screen after the finger lifts is worse than not showing one.
+    c.addEventListener('pointerdown', e => { if (e.pointerType === 'touch') hideCursor(pl); });
     const endDrag = e => {
       if (!drag) return;
       const wasSelect = drag.mode === 'select', a = drag;
@@ -5027,9 +5217,9 @@ function exportable(id) {
   const c = document.getElementById('pcv-' + id);
   const stat = document.getElementById('stat');
   if (!pl || !c) return null;
-  if (!live || !live.t.length || !c._geom) { if (stat) stat.textContent = 'Nothing to export yet — run the simulation first.'; return null; }
+  if (!live || !live.t.length || !c._geom) { showWarn('Nothing to export yet: run the simulation first.'); return null; }
   const series = plotSeries(pl);
-  if (!series.length) { if (stat) stat.textContent = 'Plot “' + pl.title + '” has no signals to export — pick some with “Signals”.'; return null; }
+  if (!series.length) { showWarn('Plot “' + pl.title + '” has no signals to export: pick some with “Signals”.'); return null; }
   return { pl, c, series };
 }
 // PNG: the on-screen canvas composited onto an opaque themed background with a
@@ -5212,8 +5402,9 @@ function setRunning(running) {
 // from PF" is checked (see runEMTLive).
 function solvePF() {
   const stat = document.getElementById('stat');
+  clearNotice(); // a new attempt supersedes the previous complaint
   const r = solvePowerFlow();
-  if (r.err) { stat.textContent = 'Power flow: ' + r.err; return; }
+  if (r.err) { showError('Power flow: ' + r.err); return; }
   window.pfResult = r; window.pfShow = true;
   // Summarize busBlocks, NOT r.buses: every pu in r.buses is divided by the
   // single slack-derived Vnom, so on a multi-voltage circuit (which is every
@@ -5236,6 +5427,7 @@ function solvePF() {
 
 function runEMTLive() {
   if (typeof Worker === 'undefined') { runEMT(); return; } // no Worker support: synchronous fallback
+  clearNotice(); // a new attempt supersedes the previous complaint
 
   const stat = document.getElementById('stat');
   const nph = +document.getElementById('phmode').value;
@@ -5285,11 +5477,18 @@ function runEMTLive() {
       computeFlowDirs(); render();
       updatePlotStepInfo();
       stat.textContent = m.stat; setRunning(false);
+      revealPlots();
     } else if (m.type === 'error') {
-      stat.textContent = m.message; setRunning(false);
+      // The status line is left mid-progress ("Running… 40%") when the worker
+      // reports a failure, so it has to be retired explicitly. Leaving it is
+      // worse than blank: it says the run is still going while the band below
+      // says it cannot run at all.
+      showError(m.message); stat.textContent = 'Run stopped: see the message above.';
+      setRunning(false);
     }
   };
-  w.onerror = ev => { stat.textContent = 'Worker error: ' + ev.message; setRunning(false); };
+  w.onerror = ev => { showError('Worker error: ' + ev.message); setRunning(false); };
+
 
   w.postMessage({ blocks: S.blocks, wires: S.wires, vconv: S.vconv, nph, Tms, dtUs, plotUs });
 }
@@ -5297,6 +5496,35 @@ function stopSim() {
   if (simWorker) { simWorker.terminate(); simWorker = null; }
   setRunning(false);
   document.getElementById('stat').textContent = 'Stopped.';
+}
+
+// After a run finishes, make sure some waveform is actually on screen. The
+// canvas is sized (autoCanvasHeight) so this is usually already true; this is
+// the backstop for the cases sizing cannot cover, such as a persisted grip
+// height, a very short window, or the user having scrolled up mid-run.
+//
+// Deliberately conservative: it only scrolls when LESS THAN a readable strip of
+// the first plot is showing, and it scrolls the minimum distance rather than
+// centring the plot. Yanking the viewport out from under someone who is looking
+// at the schematic is worse than the problem being solved.
+const PLOT_VISIBLE_MIN = 90; // px of plot card that counts as "you can see it"
+function revealPlots() {
+  const card = document.querySelector('#plots .chartcard');
+  if (!card || typeof card.getBoundingClientRect !== 'function') return;
+  const r = card.getBoundingClientRect();
+  if (!r.height) return;
+  const shown = Math.min(r.bottom, window.innerHeight) - Math.max(r.top, 0);
+  if (shown >= Math.min(PLOT_VISIBLE_MIN, r.height)) return; // enough already
+  const want = Math.min(PLOT_VISIBLE_MIN, r.height);
+  const by = Math.round(r.top - (window.innerHeight - want));
+  if (by <= 0) return;
+  // Smooth only when motion is welcome. Two reasons, one of which is not
+  // accessibility: a smooth scroll is driven by the compositor, so in any
+  // context that is not painting (a hidden tab, an automated browser) it is
+  // silently a no-op and the backstop quietly does nothing. An instant scroll
+  // always lands.
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  window.scrollBy({ top: by, behavior: reduce ? 'auto' : 'smooth' });
 }
 
 // ---- demo circuit ----
@@ -5334,6 +5562,7 @@ buildLibrary(); // populate the left Library drawer once (DEFS is static)
 syncLibraryUI(); // apply persisted Library (left sidebar) preference before first layout
 syncParamsUI(); // apply persisted Params-rail visibility preference
 syncScienceUI(); // apply persisted Science-rail visibility preference
+syncAboutUI(); // show the description unless this visitor dismissed it before
 buildExamplesMenu(); // populate the Examples picker from the embedded set
 bootFromUrl(); // ?example=<name> if present and known, else the Demo circuit
 onCanvasResize(); // sync the camera to the element's real aspect (VIEW0's 680:340 is only nominal)

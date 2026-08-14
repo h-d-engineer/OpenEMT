@@ -21,11 +21,38 @@
 :root{color-scheme:light dark}
 body{margin:0;padding:16px;background:#f0efe9;display:flex;justify-content:center}
 @media(prefers-color-scheme:dark){body{background:#1d1d1b}}
-.emt{--sfc:#ffffff;--sfc1:#f5f4ef;--bd:rgba(0,0,0,.18);--bds:rgba(0,0,0,.45);--tx:#1a1a18;--tx2:#52514e;--tx3:#898781;--acc:#2a78d6;
+/* Text tokens are chosen to clear WCAG AA (4.5:1) against EVERY surface they
+   render on, in BOTH themes, because all of this app's text is under 18.66px
+   and none of it qualifies for the 3:1 large-text allowance. The surfaces are
+   the body background, --sfc1 and --sfc; the worst pairing decides the token.
+   --tx3 used to be #898781 in both themes: 3.12:1 on the light body background
+   (which is where #stat puts every solver error), 3.26:1 on --sfc1, 3.79:1 on
+   the dark card. smoke_test.js recomputes these from this block and fails the
+   build below 4.5, so a "nicer looking" lighter grey cannot creep back in.
+
+   --acc is the accent as TEXT or a border. A filled chip needs its own pair,
+   --accf plus --acct, because one accent cannot serve both directions: in dark
+   mode a value light enough to read on the near-black ground (#5c9ce6, 4.77:1)
+   left white labels on the filled .on buttons at 2.86:1, which is how the
+   Library/Params/Science/Wide toggles and the zoom-mode chips shipped. Dark
+   therefore uses the conventional dark-UI filled chip (light fill, dark label)
+   while light keeps the dark fill with a white label. */
+.emt{--sfc:#ffffff;--sfc1:#f5f4ef;--bd:rgba(0,0,0,.18);--bds:rgba(0,0,0,.45);--tx:#1a1a18;--tx2:#52514e;--tx3:#6b6963;--acc:#2570cc;--accf:#2570cc;--acct:#ffffff;--err:#a8301b;--errbg:#fbeeeb;--warn:#7f5c0c;--warnbg:#fbf4e3;
 max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-size:13px;color:var(--tx);position:relative}
-@media(prefers-color-scheme:dark){.emt{--sfc:#2e2e2b;--sfc1:#232320;--bd:rgba(255,255,255,.22);--bds:rgba(255,255,255,.55);--tx:#eceae4;--tx2:#c3c2b7;--tx3:#898781;--acc:#5c9ce6}}
-.emt h1{font-size:18px;font-weight:600;margin:0 0 2px}
-.emt .sub{font-size:12px;color:var(--tx3);margin:0 0 12px}
+@media(prefers-color-scheme:dark){.emt{--sfc:#2e2e2b;--sfc1:#232320;--bd:rgba(255,255,255,.22);--bds:rgba(255,255,255,.55);--tx:#eceae4;--tx2:#c3c2b7;--tx3:#9b9993;--acc:#5c9ce6;--accf:#6fa8e4;--acct:#1d1d1b;--err:#ef8570;--errbg:#3a2622;--warn:#e0ac42;--warnbg:#332b1a}}
+/* The brand sits in the status row, so it is sized to that row (13px) rather
+   than as a page heading. Still an h1: it is the document's title for
+   assistive tech and search, only its presentation changed. */
+.emt h1.brand{font-size:13px;font-weight:700;margin:0;letter-spacing:-.01em;white-space:nowrap;flex:none}
+.emt .infobtn{flex:none;font-size:13px;line-height:1;padding:2px 6px;background:transparent;
+  color:var(--tx2);border:1px solid var(--bd);border-radius:6px;cursor:pointer}
+.emt .infobtn:hover{background:var(--sfc1);color:var(--tx)}
+.emt .infobtn.on{background:var(--accf);color:var(--acct);border-color:var(--accf)}
+.emt .sub{font-size:12px;color:var(--tx3);margin:0 0 8px;max-width:96ch}
+.emt .sub[hidden]{display:none}
+.emt .aboutx{font-size:11px;margin-left:8px;padding:1px 8px;background:transparent;color:var(--tx2);
+  border:1px solid var(--bd);border-radius:6px;cursor:pointer;white-space:nowrap}
+.emt .aboutx:hover{background:var(--sfc1);color:var(--tx)}
 .emt .pal{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center}
 .emt .pal button{font-size:12px;padding:5px 10px;background:transparent;color:var(--tx);border:1px solid var(--bds);border-radius:8px;cursor:pointer}
 .emt .pal button:hover{background:var(--sfc1)}
@@ -89,7 +116,7 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
 .emt .axtog button{font-size:10px;width:20px;height:18px;padding:0;border:1px solid var(--bd);background:transparent;color:var(--tx3);cursor:pointer}
 .emt .axtog button:first-child{border-radius:5px 0 0 5px}
 .emt .axtog button:last-child{border-radius:0 5px 5px 0;border-left:none}
-.emt .axtog button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.emt .axtog button.on{background:var(--accf);color:var(--acct);border-color:var(--accf)}
 .emt .plotstoolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;text-transform:none;letter-spacing:normal}
 .emt .plotstoolbar button{font-size:11px;padding:3px 9px;background:transparent;color:var(--tx);border:1px solid var(--bds);border-radius:6px;cursor:pointer}
 .emt .plotstoolbar button:hover{background:var(--sfc1)}
@@ -105,6 +132,20 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
   border:1px solid var(--acc);pointer-events:none}
 .emt .selbox.sx{border-top-color:transparent;border-bottom-color:transparent}
 .emt .selbox.sy{border-left-color:transparent;border-right-color:transparent}
+/* Data cursor. Both overlays are pointer-events:none so they never intercept
+   the zoom drag underneath them, and both are hidden until a pointer is
+   actually over a plot with data. */
+.emt .pcur{position:absolute;top:0;width:1px;display:none;pointer-events:none;
+  background:var(--tx3);z-index:14}
+.emt .pread{position:absolute;display:none;pointer-events:none;z-index:15;
+  background:var(--sfc);border:1px solid var(--bds);border-radius:7px;padding:5px 8px;
+  box-shadow:0 4px 16px rgba(0,0,0,.22);font-size:11.5px;line-height:1.5;color:var(--tx2);
+  white-space:nowrap;max-width:260px;overflow:hidden}
+.emt .pread b{color:var(--tx);font-weight:600;font-variant-numeric:tabular-nums}
+.emt .pread .pr-t{color:var(--tx);font-weight:600;display:block;margin-bottom:2px;
+  font-variant-numeric:tabular-nums}
+.emt .pread .pr-s{display:block}
+.emt .pread .pr-sw{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px}
 .emt .plotgrip{bottom:-5px}
 .emt .zmode{display:inline-flex}
 .emt .zmode button{font-size:10px;padding:2px 7px;border:1px solid var(--bd);border-radius:0;
@@ -112,17 +153,51 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
 .emt .zmode button:first-child{border-radius:6px 0 0 6px}
 .emt .zmode button:last-child{border-radius:0 6px 6px 0;border-left:none}
 .emt .zmode button:not(:first-child):not(:last-child){border-left:none}
-.emt .zmode button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.emt .zmode button.on{background:var(--accf);color:var(--acct);border-color:var(--accf)}
 .emt .hint{font-size:11px;color:var(--tx3);margin-top:4px}
 .emt .statusline{font-size:12px;color:var(--tx3)}
-.emt .statusrow{display:flex;gap:10px;align-items:baseline;margin-bottom:6px}
+/* align-items:center (was baseline) because the row now carries the brand and
+   the info button alongside the text, and a baseline would hang the button
+   below the line. min-width:0 on the status text lets it shrink instead of
+   pushing the find box off the row. */
+.emt .statusrow{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+.emt .statusline{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Notice band: errors and warnings, separated from #stat.
+   #stat is a one-line ellipsised strip carrying progress ("Running... 40%") and
+   solve summaries. Routing solver diagnostics through it meant the best writing
+   in this app ("Distance relay #7 needs a 3-phase AC node...") competed with a
+   percentage counter for the same 12px of grey, and after the status row was
+   made single-line it was being truncated outright. This band wraps, holds the
+   full text, persists until dismissed or superseded, and is colour-coded. */
+.emt .notice{display:none;margin:0 0 8px;padding:8px 12px;border-radius:9px;font-size:12.5px;
+  line-height:1.5;border:1px solid;gap:12px;align-items:flex-start}
+.emt .notice.on{display:flex}
+.emt .notice.err{background:var(--errbg);border-color:var(--err);color:var(--err)}
+.emt .notice.warn{background:var(--warnbg);border-color:var(--warn);color:var(--warn)}
+.emt .notice-t{flex:1;min-width:0}
+.emt .notice-l{font-weight:700;text-transform:uppercase;letter-spacing:.05em;font-size:10px;
+  display:block;margin-bottom:2px;opacity:.85}
+.emt .notice button{flex:none;font-size:11px;padding:2px 9px;background:transparent;color:inherit;
+  border:1px solid currentColor;border-radius:6px;cursor:pointer;opacity:.75}
+.emt .notice button:hover{opacity:1}
+/* Numerics popover, opened by the gear in the Sim cluster. Same floating-panel
+   language as .picker and .layoutdialog. */
+.emt .simadv{position:absolute;z-index:22;background:var(--sfc);border:1px solid var(--bds);
+  border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.3);padding:10px 12px;
+  display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.emt .simadv-hd{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3)}
+#simadvbtn.on{background:var(--accf);color:var(--acct);border-color:var(--accf)}
 /* Find box: sits in the status row rather than floating over the canvas,
    because the params and science rails already occupy both canvas edges
    (top:8px to bottom:8px) and a floating find bar would collide with them.
    Always visible, so the feature is discoverable without knowing the key. */
-.emt .findbox{position:relative;display:flex;align-items:center;gap:6px;flex:none}
-.emt .findbox input{width:172px;height:24px;font-size:12px;padding:0 7px;border:1px solid var(--bd);
-  border-radius:6px;background:var(--sfc);color:var(--tx)}
+/* flex:0 1 auto with min-width:0, NOT flex:none. The status row gained the
+   brand and the info button, and a rigid 172px find box then pushed the row
+   past a 375px viewport and gave the whole page a horizontal scrollbar. The
+   input shrinks to 96px before anything else gives. */
+.emt .findbox{position:relative;display:flex;align-items:center;gap:6px;flex:0 1 auto;min-width:0}
+.emt .findbox input{flex:1 1 96px;min-width:0;max-width:172px;height:24px;font-size:12px;padding:0 7px;
+  border:1px solid var(--bd);border-radius:6px;background:var(--sfc);color:var(--tx)}
 .emt .findbox input:focus{outline:none;border-color:var(--acc)}
 .emt .findcount{font-size:11px;color:var(--tx3);white-space:nowrap;min-width:40px}
 .emt .findlist{position:absolute;right:0;top:28px;z-index:30;width:262px;max-height:300px;overflow:auto;
@@ -145,7 +220,7 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
 .emt .layoutdlg-btns{display:flex;gap:6px;justify-content:flex-end}
 .emt .layoutdlg-btns button{font-size:11px;padding:5px 12px;background:transparent;color:var(--tx);border:1px solid var(--bds);border-radius:6px;cursor:pointer}
 .emt .layoutdlg-btns button:hover{background:var(--sfc1)}
-.emt .layoutdlg-btns button.primary{background:var(--acc);color:#fff;border-color:var(--acc)}
+.emt .layoutdlg-btns button.primary{background:var(--accf);color:var(--acct);border-color:var(--accf)}
 .emt .palitem{display:flex;align-items:center;gap:6px;width:128px;font-size:12px;padding:4px 6px;
   background:transparent;color:var(--tx);border:1px solid var(--bds);border-radius:8px;cursor:grab;text-align:left}
 .emt .palitem:hover{background:var(--sfc1)}
@@ -199,12 +274,12 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
    (Blocks, Edit, File, Sim, Run) for scannability. */
 .emt .tcl{display:flex;align-items:center;gap:6px;flex-wrap:wrap;
   border:1px solid var(--bd);border-radius:9px;padding:3px 8px;background:var(--sfc1)}
-.emt .tcl-l{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;
+.emt .tcl-l{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;
   color:var(--tx3);margin-right:2px;white-space:nowrap}
-#widebtn.on{background:var(--acc);color:#fff;border-color:var(--acc)}
-#libbtn.on{background:var(--acc);color:#fff;border-color:var(--acc)}
-#parambtn.on{background:var(--acc);color:#fff;border-color:var(--acc)}
-#scibtn.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+#widebtn.on{background:var(--accf);color:var(--acct);border-color:var(--accf)}
+#libbtn.on{background:var(--accf);color:var(--acct);border-color:var(--accf)}
+#parambtn.on{background:var(--accf);color:var(--acct);border-color:var(--accf)}
+#scibtn.on{background:var(--accf);color:var(--acct);border-color:var(--accf)}
 @media(max-width:1100px){
   .emt .props{width:228px}
   .emt .sci-rail{width:288px}
@@ -245,8 +320,32 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
 </head>
 <body>
 <div class="emt">
-<h1>OpenEMT</h1>
-<p class="sub">The electromagnetic transient simulator built for AI agents. Trapezoidal nodal solver with steady-state power flow and machine initialization, addressable from this canvas, a CLI, or an MCP server. Beta: provided as is, results are not certified for engineering decisions.</p>
+<!-- Identity, project and status share one row, and the toolbar follows it.
+     They used to be three stacked blocks (h1, then the description paragraph,
+     then the toolbar) costing 68px of height above a canvas that already
+     pushed the plots off the bottom of a 720px laptop screen. The description
+     is still shown on a first visit, because it is the only thing that tells a
+     visitor what this is, but dismissing it now persists. -->
+<div class="statusrow">
+  <h1 class="brand">OpenEMT</h1>
+  <button class="infobtn" id="infobtn" onclick="toggleAbout()"
+    title="What OpenEMT is, and the beta caveat">&#9432;</button>
+  <span class="projname" id="projname" title="Loaded circuit &mdash; &bull; marks unsaved changes">Demo</span>
+  <div class="statusline" id="stat" style="flex:1">Demo: breaker energizes the feeder at t = 30 ms. Press / to find a block by name. Click blocks to edit, drag to move, click two terminals to wire. Click a wire to highlight what it connects (Delete removes it). Scroll or use +/&minus; to zoom, drag empty canvas to pan. Select a block and press R to rotate it 90&deg;.</div>
+  <div class="findbox" id="findbox">
+    <input id="findq" type="text" autocomplete="off" spellcheck="false" placeholder="Find block  &#47;"
+      title="Find a block by name, type or id. Press / from anywhere to jump here; Up/Down previews each match, Enter selects it and Enter again steps to the next, Esc leaves the search and returns to where you were."
+      oninput="findType()" onkeydown="findKey(event)">
+    <span class="findcount" id="findcount"></span>
+    <div class="findlist" id="findlist" style="display:none"></div>
+  </div>
+</div>
+<p class="sub" id="about">The electromagnetic transient simulator built for AI agents. Trapezoidal nodal solver with steady-state power flow and machine initialization, addressable from this canvas, a CLI, or an MCP server. Beta: provided as is, results are not certified for engineering decisions.
+  <button class="aboutx" onclick="toggleAbout()" title="Hide this (the &#9432; button brings it back)">Dismiss</button></p>
+<div class="notice" id="notice" role="status" aria-live="polite">
+  <span class="notice-t"><span class="notice-l" id="noticelab"></span><span id="noticemsg"></span></span>
+  <button onclick="clearNotice()" title="Dismiss">Dismiss</button>
+</div>
 
 <div class="pal">
   <div class="tcl"><span class="tcl-l">Blocks</span>
@@ -293,18 +392,16 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
     <span class="mode"><label>Duration</label>
       <input type="number" id="duration" value="120" min="10" max="60000" step="10" style="width:70px;height:26px">ms
     </span>
-    <span class="mode" title="Solver's internal trapezoidal step. Smaller = more accurate but slower; larger risks numerical ringing.">
-      <label>Time step</label>
-      <input type="number" id="dtus" value="50" min="1" max="1000" step="5" style="width:60px;height:26px">&micro;s
-    </span>
-    <span class="mode" title="How often a solved step is kept for plotting. Blank/0 = auto (keeps every solver sample on normal runs, only thinning very long runs to cap storage). Must be &#8805; time step. The readout after the field shows the spacing actually used by the last run.">
-      <label>Plot step</label>
-      <input type="number" id="plotus" value="" min="0" max="1000000" step="10" placeholder="auto" style="width:66px;height:26px">&micro;s
-      <span id="plotstepinfo" class="zoominfo" style="margin-left:4px"></span>
-    </span>
-    <span class="mode" title="Animated markers on each wire showing which way active (blue, upper) and reactive (yellow, lower) power are flowing.">
-      <label><input type="checkbox" id="flowtoggle" checked onchange="render()"> Flow arrows</label>
-    </span>
+    <!-- Numerics and the flow-arrow toggle live behind this button rather than
+         inline. The Sim cluster measured 872px of a 1233px row, which on its
+         own forced the toolbar from two rows to three (Sim + Run came to 1238px
+         and missed fitting by five pixels). These are the controls a user sets
+         once and then leaves, unlike Phases, V and Duration.
+         V (PH/LL) deliberately stays inline: it silently rescales every voltage
+         in the circuit, and burying a control with that much blast radius is
+         how the sqrt(3) trap in CLAUDE.md gets sprung. -->
+    <button id="simadvbtn" onclick="toggleSimAdv(event)"
+      title="Numerics: solver time step, plot sampling, and flow arrows.">&#9881;</button>
   </div>
   <div class="tcl"><span class="tcl-l">Run</span>
     <button id="pfbtn" onclick="solvePF()" title="Solve the steady-state power flow and annotate each bus with |V| (pu) and angle (green in the 0.95 to 1.05 band, red outside).">&#9878; Power flow</button>
@@ -315,16 +412,20 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
     <button id="stopbtn" onclick="stopSim()" disabled>&#9632; Stop</button>
   </div>
 </div>
-<div class="statusrow">
-  <span class="projname" id="projname" title="Loaded circuit — &bull; marks unsaved changes">Demo</span>
-  <div class="statusline" id="stat" style="flex:1">Demo: breaker energizes the feeder at t = 30 ms. Press / to find a block by name. Click blocks to edit, drag to move, click two terminals to wire. Click a wire to highlight what it connects (Delete removes it). Scroll or use +/&minus; to zoom, drag empty canvas to pan. Select a block and press R to rotate it 90&deg;.</div>
-  <div class="findbox" id="findbox">
-    <input id="findq" type="text" autocomplete="off" spellcheck="false" placeholder="Find block  &#47;"
-      title="Find a block by name, type or id. Press / from anywhere to jump here; Up/Down previews each match, Enter selects it and Enter again steps to the next, Esc leaves the search and returns to where you were."
-      oninput="findType()" onkeydown="findKey(event)">
-    <span class="findcount" id="findcount"></span>
-    <div class="findlist" id="findlist" style="display:none"></div>
-  </div>
+<div id="simadv" class="simadv" style="display:none">
+  <div class="simadv-hd">Numerics</div>
+  <span class="mode" title="Solver's internal trapezoidal step. Smaller = more accurate but slower; larger risks numerical ringing.">
+    <label>Time step</label>
+    <input type="number" id="dtus" value="50" min="1" max="1000" step="5" style="width:60px;height:26px">&micro;s
+  </span>
+  <span class="mode" title="How often a solved step is kept for plotting. Blank/0 = auto (keeps every solver sample on normal runs, only thinning very long runs to cap storage). Must be &#8805; time step. The readout after the field shows the spacing actually used by the last run.">
+    <label>Plot step</label>
+    <input type="number" id="plotus" value="" min="0" max="1000000" step="10" placeholder="auto" style="width:66px;height:26px">&micro;s
+    <span id="plotstepinfo" class="zoominfo" style="margin-left:4px"></span>
+  </span>
+  <span class="mode" title="Animated markers on each wire showing which way active (blue, upper) and reactive (yellow, lower) power are flowing.">
+    <label><input type="checkbox" id="flowtoggle" checked onchange="render()"> Flow arrows</label>
+  </span>
 </div>
 
 <div class="main">
@@ -343,7 +444,12 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
 </div>
 
 <div class="st2 plotstoolbar" style="margin-top:8px">
-  <span>Plots — solid A, dashed B, dotted C. Drag a plot to zoom (Shift+drag to pan, scroll to zoom, double-click to clear that plot's vertical zoom); drag the tab under a plot to resize it; “Signals” picks what each plot shows and its axis.</span>
+  <!-- One line, not two. The old sentence spelled out every zoom gesture and
+       wrapped to a second row directly above the plots, costing ~20px at the
+       exact place the fold falls on a 720px laptop. The gestures it described
+       are on the tooltips of the controls to the right of it, which is where
+       someone looks for them. -->
+  <span class="plotshint" title="Drag a plot to zoom; Shift+drag to pan; scroll to zoom; double-click clears that plot's vertical zoom. Drag the tab under a plot to resize it.">Plots: solid A, dashed B, dotted C. Drag to zoom, “Signals” picks what each plot shows.</span>
   <span class="flexpad"></span>
   <span id="zoominfo" class="zoominfo"></span>
   <span class="zmode" id="zoommode" title="What a drag/scroll on a plot zooms. Time (X) is shared by every plot; vertical (Y) is per plot.">
@@ -7882,6 +7988,13 @@ function rotateSelected() {
 }
 document.addEventListener('keydown', e => {
   const tag = (e.target.tagName || '').toLowerCase();
+  // Escape closes the numerics popover BEFORE the typing guard below, because
+  // the popover contains number inputs: checking after it would make Escape
+  // dead exactly when the focus is inside the thing you want to dismiss.
+  if (e.key === 'Escape') {
+    const pop = document.getElementById('simadv');
+    if (pop && pop.style.display !== 'none') { e.preventDefault(); closeSimAdv(); return; }
+  }
   if (tag === 'input' || tag === 'textarea' || tag === 'select') return; // don't hijack typing
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
@@ -8827,7 +8940,7 @@ function onCanvasResize() {
   render();
 }
 document.addEventListener('fullscreenchange', onCanvasResize);
-window.addEventListener('resize', () => { onCanvasResize(); drawAllPlots(); });
+window.addEventListener('resize', () => { syncCanvasHeight(); onCanvasResize(); drawAllPlots(); });
 
 // ---- canvas height: drag the grip on the bottom edge (SPEC §3). Wide/
 // fullscreen only ever changed the WIDTH, so on a tall screen the schematic
@@ -8839,9 +8952,34 @@ window.addEventListener('resize', () => { onCanvasResize(); drawAllPlots(); });
 // the other layout preferences; double-click clears it so the stylesheet's
 // height (which is responsive: 460px, 380px under 760px wide) takes over again.
 const CNV_H_MIN = 200, CNV_H_MAX = 2000;
+// Space the plots need below the canvas before any waveform is visible: the
+// plots toolbar, one plot card's header, and enough plot canvas to read a
+// trace, plus the margins between them. Used to size the canvas so that
+// pressing Run changes something the user can actually see.
+const PLOT_RESERVE = 210;
+// Auto canvas height, used only when the user has not dragged the grip.
+//
+// The stylesheet's flat 460px was set without reference to the window, and on a
+// 1280x720 laptop it put the first plot at y=771: the whole output of the tool
+// lived below the fold, so a run finished with no visible change anywhere on
+// screen. Deriving the height from the viewport instead keeps the generous
+// canvas on a tall monitor (it clamps back to 460) and trades some schematic
+// height for a visible waveform on a short one. A persisted grip height always
+// wins: an explicit choice outranks this.
+function autoCanvasHeight() {
+  const wrap = document.querySelector('.cnvwrap');
+  if (!wrap || !window.innerHeight) return null;
+  const top = wrap.getBoundingClientRect().top + window.scrollY;
+  const h = Math.round(window.innerHeight - top - PLOT_RESERVE);
+  // Floor at 280 rather than CNV_H_MIN: 200px is a legitimate thing to drag
+  // down to by hand, but it is too cramped to hand someone on arrival.
+  return Math.max(280, Math.min(460, h));
+}
 function syncCanvasHeight() {
   const h = +localStorage.getItem('emt_cnvh');
-  cnv.style.height = (h >= CNV_H_MIN && h <= CNV_H_MAX) ? h + 'px' : '';
+  if (h >= CNV_H_MIN && h <= CNV_H_MAX) { cnv.style.height = h + 'px'; return; }
+  const auto = autoCanvasHeight();
+  cnv.style.height = auto ? auto + 'px' : '';
 }
 function bindCanvasResizer() {
   const grip = document.getElementById('cnvgrip');
@@ -8867,9 +9005,13 @@ function bindCanvasResizer() {
   };
   grip.addEventListener('pointerup', end);
   grip.addEventListener('pointercancel', end);
+  // Double-click clears the persisted height and hands the canvas back to
+  // autoCanvasHeight(), which is what "reset" now means. Clearing the inline
+  // style instead would restore the stylesheet's flat 460px, i.e. the very
+  // value that put the plots below the fold.
   grip.addEventListener('dblclick', () => {
     localStorage.removeItem('emt_cnvh');
-    cnv.style.height = '';
+    syncCanvasHeight();
     onCanvasResize();
   });
 }
@@ -11405,6 +11547,58 @@ function toggleScience() {
   localStorage.setItem('emt_sci', on ? '1' : '0');
   syncScienceUI();
 }
+// The description paragraph under the title. Shown by DEFAULT (absent key), not
+// hidden: it is the only thing on the page that says what OpenEMT is and that
+// results are not certified, so a first-time visitor must get it. Once
+// dismissed the choice sticks, which is what buys back the 44px of height that
+// pushed the plots below the fold for the people who already know.
+// Note the polarity is the inverse of the rail toggles above: those persist "1"
+// for shown, this persists "1" for HIDDEN, because the default differs.
+function syncAboutUI() {
+  const el = document.getElementById('about');
+  const btn = document.getElementById('infobtn');
+  const hidden = localStorage.getItem('emt_about') === '1';
+  if (el) el.hidden = hidden;
+  if (btn) btn.classList.toggle('on', !hidden);
+}
+function toggleAbout() {
+  const hidden = localStorage.getItem('emt_about') !== '1'; // flip
+  localStorage.setItem('emt_about', hidden ? '1' : '0');
+  syncAboutUI();
+  syncCanvasHeight(); // the row appearing/disappearing moves the canvas top
+  onCanvasResize(); // ...and therefore changes its aspect
+}
+// Numerics popover (time step, plot step, flow arrows), anchored under its gear
+// button. Not persisted: it is a transient panel, not a layout preference.
+function toggleSimAdv(ev) {
+  const pop = document.getElementById('simadv');
+  const btn = document.getElementById('simadvbtn');
+  if (!pop || !btn) return;
+  const open = pop.style.display === 'none';
+  pop.style.display = open ? 'flex' : 'none';
+  btn.classList.toggle('on', open);
+  if (open) {
+    // Position relative to .emt, which is the nearest positioned ancestor.
+    const host = document.querySelector('.emt').getBoundingClientRect();
+    const b = btn.getBoundingClientRect();
+    pop.style.top = (b.bottom - host.top + 6) + 'px';
+    // Keep it on screen when the gear sits near the right edge.
+    pop.style.left = Math.max(0, Math.min(b.left - host.left, host.width - 240)) + 'px';
+  }
+  if (ev) ev.stopPropagation();
+}
+function closeSimAdv() {
+  const pop = document.getElementById('simadv');
+  const btn = document.getElementById('simadvbtn');
+  if (pop && pop.style.display !== 'none') { pop.style.display = 'none'; if (btn) btn.classList.remove('on'); }
+}
+// Dismiss on an outside click or Escape, the two things every popover must do.
+document.addEventListener('mousedown', e => {
+  const pop = document.getElementById('simadv');
+  if (!pop || pop.style.display === 'none') return;
+  if (pop.contains(e.target) || e.target.closest('#simadvbtn')) return;
+  closeSimAdv();
+});
 
 // ---- save / load ----
 // Run settings travel WITH the circuit. Without this a case whose first event
@@ -11510,9 +11704,9 @@ function loadCircuit(file) {
   rd.onload = () => {
     const stat = document.getElementById('stat');
     let d;
-    try { d = JSON.parse(rd.result); } catch { stat.textContent = 'Load failed: not valid JSON.'; return; }
+    try { d = JSON.parse(rd.result); } catch { showError('Load failed: that file is not valid JSON.'); return; }
     const res = applyCircuit(d, file.name);
-    if (res.err) { stat.textContent = 'Load failed: ' + res.err; return; }
+    if (res.err) { showError('Load failed: ' + res.err); return; }
     stat.textContent = 'Loaded ' + file.name + ': ' + S.blocks.length + ' blocks, ' + S.wires.length + ' wires.'
       + (d.sim ? ' Run settings from file: ' + document.getElementById('duration').value + ' ms at '
         + document.getElementById('dtus').value + ' µs.' : '')
@@ -11537,9 +11731,9 @@ function loadExampleByName(name) {
   const stat = document.getElementById('stat');
   if (!name) return false;
   const d = EXAMPLES[name];
-  if (!d) { stat.textContent = 'No such example: ' + name + '.'; return false; }
+  if (!d) { showError('No such example: ' + name + '.'); return false; }
   const res = applyCircuit(JSON.parse(JSON.stringify(d)), name + '.json');
-  if (res.err) { stat.textContent = 'Could not open ' + name + ': ' + res.err; return false; }
+  if (res.err) { showError('Could not open ' + name + ': ' + res.err); return false; }
   loadedExample = name; // after applyCircuit: its touchModel() clears this
   fitView();
   render();
@@ -11560,8 +11754,8 @@ function loadExampleByName(name) {
 function copyCaseLink() {
   const stat = document.getElementById('stat');
   if (!loadedExample) {
-    stat.textContent = 'Only the shipped examples have a shareable link, and this circuit is not one '
-      + '(or has been edited since it was opened). Use Save to send the .json file instead.';
+    showWarn('Only the shipped examples have a shareable link, and this circuit is not one '
+      + '(or has been edited since it was opened). Use Save to send the .json file instead.');
     return;
   }
   const pf = !!(document.getElementById('pfinit') || {}).checked;
@@ -11623,9 +11817,9 @@ function importCircuit(file) {
   rd.onload = () => {
     const stat = document.getElementById('stat');
     const res = importCase(rd.result, file.name);
-    if (res.err) { stat.textContent = 'Import failed: ' + res.err; return; }
+    if (res.err) { showError('Import failed: ' + res.err); return; }
     const ap = applyCircuit(res.circuit, file.name);
-    if (ap.err) { stat.textContent = 'Import failed: ' + ap.err; return; }
+    if (ap.err) { showError('Import failed: ' + ap.err); return; }
     // Imported circuits have only a coarse grid layout; tidy them like the user
     // would with the Layout dialog, then frame the whole network.
     try { doHierarchicalLayout('fit'); } catch (e) { fitView(); }
@@ -12240,6 +12434,12 @@ function renderPlots() {
       + '<div class="cnvwrap2"><canvas class="plot" id="pcv-' + pl.id + '" height="' + plotHeight(pl)
       + '" style="height:' + plotHeight(pl) + 'px"></canvas>'
       + '<div class="selbox" id="selbox-' + pl.id + '"></div>'
+      // Data cursor: a hairline and a value readout, both plain DOM overlays
+      // rather than anything drawn into the canvas. Drawing them on the canvas
+      // would mean repainting every trace on every pointermove, which is the
+      // cost that made canvas dragging stutter at 147 blocks.
+      + '<div class="pcur" id="pcur-' + pl.id + '"></div>'
+      + '<div class="pread" id="pread-' + pl.id + '"></div>'
       + '<div class="plotgrip" data-plot="' + pl.id + '" title="Drag to resize this plot (double-click to reset)"></div></div>'
       + '<div class="hint" id="pleg-' + pl.id + '"></div></div>';
   });
@@ -12485,6 +12685,91 @@ function drawOnePlot(pl, dark) {
 // the conventional way 3-phase power is quoted, not per-phase like current.
 function phaseLabel(d) { return d.dc ? 'DC' : (d.phase == null ? '' : PH_LBL[d.phase]); }
 
+// ---- notice band (errors and warnings) ----
+// The solver's diagnostics are the best writing in this project: they name the
+// offending block by id, explain the physical cause, and give the fix. They
+// used to be assigned to #stat, the same one-line strip that carries
+// "Running... 40%" and the solve summary, so a modelling mistake arrived in the
+// same 12px of grey as routine progress and, once that line became single-line,
+// was truncated with an ellipsis.
+//
+// showError/showWarn put the FULL text in a wrapping, colour-coded band that
+// stays until it is dismissed or replaced. Never truncate here: the second half
+// of "...set Fov and Fuv to 0, or place this relay on a full 3-phase node" is
+// the half that tells you what to do.
+function setNotice(msg, level) {
+  const box = document.getElementById('notice');
+  const lab = document.getElementById('noticelab');
+  const txt = document.getElementById('noticemsg');
+  if (!box || !txt) return;
+  txt.textContent = msg;
+  if (lab) lab.textContent = level === 'warn' ? 'Warning' : 'Cannot run this circuit';
+  box.className = 'notice on ' + (level === 'warn' ? 'warn' : 'err');
+  syncCanvasHeight(); onCanvasResize(); // the band changes the canvas top
+}
+function showError(msg) { setNotice(msg, 'err'); }
+function showWarn(msg) { setNotice(msg, 'warn'); }
+function clearNotice() {
+  const box = document.getElementById('notice');
+  if (!box || !box.classList.contains('on')) return;
+  box.className = 'notice';
+  syncCanvasHeight(); onCanvasResize();
+}
+
+// ---- data cursor ----
+// "What is the voltage at t = 34 ms" is the question a transient simulator
+// exists to answer, and until this the only way to get it was to export CSV and
+// open a spreadsheet. A hairline at the nearest stored sample plus a readout of
+// every visible series at that instant answers it in place.
+//
+// Snapped to a real sample, never interpolated: the value shown is one the
+// solver actually produced, so it agrees with the CSV export to the last digit.
+// At a coarse plot step the hairline visibly steps between samples, which is
+// honest about the resolution rather than inventing points between them.
+function hideCursor(pl) {
+  const cur = document.getElementById('pcur-' + pl.id);
+  const rd = document.getElementById('pread-' + pl.id);
+  if (cur) cur.style.display = 'none';
+  if (rd) rd.style.display = 'none';
+}
+function showCursor(pl, c, xCss) {
+  const cur = document.getElementById('pcur-' + pl.id);
+  const rd = document.getElementById('pread-' + pl.id);
+  const g = c && c._geom;
+  if (!cur || !rd) return;
+  // No geometry means no axes (empty plot); no live.t means nothing was run.
+  if (!g || !live || !live.t || !live.t.length) { hideCursor(pl); return; }
+  const plotW = g.W - g.leftPad - g.rightPad;
+  if (plotW <= 0 || xCss < g.leftPad || xCss > g.W - g.rightPad) { hideCursor(pl); return; }
+  const t = g.t0 + (xCss - g.leftPad) / plotW * (g.t1 - g.t0);
+  // Nearest sample within the drawn window. Linear scan over the window bounds
+  // rather than a binary search: the window is already index-bounded and this
+  // runs once per pointermove, not per frame of an animation.
+  const { i0, i1 } = windowBounds({ t0: g.t0, t1: g.t1 });
+  let bi = i0, bd = Infinity;
+  for (let i = i0; i <= i1; i++) { const d = Math.abs(live.t[i] - t); if (d < bd) { bd = d; bi = i; } }
+  const ts = live.t[bi];
+  const x = g.leftPad + plotW * (ts - g.t0) / ((g.t1 - g.t0) || 1);
+  cur.style.display = 'block';
+  cur.style.left = Math.round(x) + 'px';
+  cur.style.height = g.H + 'px';
+  const series = plotSeries(pl);
+  let h = '<span class="pr-t">t = ' + ts.toFixed(3) + ' ms</span>';
+  if (!series.length) h += '<span class="pr-s">No signals on this plot.</span>';
+  series.forEach(s => {
+    const v = s.samples[bi];
+    h += '<span class="pr-s"><span class="pr-sw" style="background:' + s.color + '"></span>'
+      + escAttr(seriesLabel(s)) + ' <b>' + (v === undefined ? '—' : sciNum(v, 4)) + '</b></span>';
+  });
+  rd.innerHTML = h;
+  rd.style.display = 'block';
+  // Flip to the left of the hairline when it would otherwise run off the card,
+  // and clamp to the top so a tall readout on a short plot stays readable.
+  const w = rd.offsetWidth, hh = rd.offsetHeight;
+  rd.style.left = Math.round(x + 12 + w > g.W ? Math.max(0, x - 12 - w) : x + 12) + 'px';
+  rd.style.top = Math.round(Math.max(0, Math.min(8, g.H - hh))) + 'px';
+}
+
 // Drag = box-select a time range to zoom into (rubber-band overlay, all
 // plots share one time window — SPEC §3). Shift+drag = pan the current
 // window. Wheel = zoom in/out centered on the cursor's time, like the
@@ -12549,6 +12834,17 @@ function bindPlotInteractions() {
         drag.lastY = p.y;
       } else showBand({ x: drag.x0, y: drag.y0 }, p);
     });
+    // Data cursor. Separate listener from the drag one above so the two stay
+    // independent: the drag handler returns early when there is no drag, which
+    // is exactly when the cursor should be live.
+    c.addEventListener('pointermove', e => {
+      if (drag) { hideCursor(pl); return; } // the zoom band owns the pointer
+      showCursor(pl, c, local(e).x);
+    });
+    c.addEventListener('pointerleave', () => hideCursor(pl));
+    // A touch drag is a pan/zoom gesture, not a hover; leaving a cursor stuck
+    // on screen after the finger lifts is worse than not showing one.
+    c.addEventListener('pointerdown', e => { if (e.pointerType === 'touch') hideCursor(pl); });
     const endDrag = e => {
       if (!drag) return;
       const wasSelect = drag.mode === 'select', a = drag;
@@ -12638,9 +12934,9 @@ function exportable(id) {
   const c = document.getElementById('pcv-' + id);
   const stat = document.getElementById('stat');
   if (!pl || !c) return null;
-  if (!live || !live.t.length || !c._geom) { if (stat) stat.textContent = 'Nothing to export yet — run the simulation first.'; return null; }
+  if (!live || !live.t.length || !c._geom) { showWarn('Nothing to export yet: run the simulation first.'); return null; }
   const series = plotSeries(pl);
-  if (!series.length) { if (stat) stat.textContent = 'Plot “' + pl.title + '” has no signals to export — pick some with “Signals”.'; return null; }
+  if (!series.length) { showWarn('Plot “' + pl.title + '” has no signals to export: pick some with “Signals”.'); return null; }
   return { pl, c, series };
 }
 // PNG: the on-screen canvas composited onto an opaque themed background with a
@@ -12823,8 +13119,9 @@ function setRunning(running) {
 // from PF" is checked (see runEMTLive).
 function solvePF() {
   const stat = document.getElementById('stat');
+  clearNotice(); // a new attempt supersedes the previous complaint
   const r = solvePowerFlow();
-  if (r.err) { stat.textContent = 'Power flow: ' + r.err; return; }
+  if (r.err) { showError('Power flow: ' + r.err); return; }
   window.pfResult = r; window.pfShow = true;
   // Summarize busBlocks, NOT r.buses: every pu in r.buses is divided by the
   // single slack-derived Vnom, so on a multi-voltage circuit (which is every
@@ -12847,6 +13144,7 @@ function solvePF() {
 
 function runEMTLive() {
   if (typeof Worker === 'undefined') { runEMT(); return; } // no Worker support: synchronous fallback
+  clearNotice(); // a new attempt supersedes the previous complaint
 
   const stat = document.getElementById('stat');
   const nph = +document.getElementById('phmode').value;
@@ -12896,11 +13194,18 @@ function runEMTLive() {
       computeFlowDirs(); render();
       updatePlotStepInfo();
       stat.textContent = m.stat; setRunning(false);
+      revealPlots();
     } else if (m.type === 'error') {
-      stat.textContent = m.message; setRunning(false);
+      // The status line is left mid-progress ("Running… 40%") when the worker
+      // reports a failure, so it has to be retired explicitly. Leaving it is
+      // worse than blank: it says the run is still going while the band below
+      // says it cannot run at all.
+      showError(m.message); stat.textContent = 'Run stopped: see the message above.';
+      setRunning(false);
     }
   };
-  w.onerror = ev => { stat.textContent = 'Worker error: ' + ev.message; setRunning(false); };
+  w.onerror = ev => { showError('Worker error: ' + ev.message); setRunning(false); };
+
 
   w.postMessage({ blocks: S.blocks, wires: S.wires, vconv: S.vconv, nph, Tms, dtUs, plotUs });
 }
@@ -12908,6 +13213,35 @@ function stopSim() {
   if (simWorker) { simWorker.terminate(); simWorker = null; }
   setRunning(false);
   document.getElementById('stat').textContent = 'Stopped.';
+}
+
+// After a run finishes, make sure some waveform is actually on screen. The
+// canvas is sized (autoCanvasHeight) so this is usually already true; this is
+// the backstop for the cases sizing cannot cover, such as a persisted grip
+// height, a very short window, or the user having scrolled up mid-run.
+//
+// Deliberately conservative: it only scrolls when LESS THAN a readable strip of
+// the first plot is showing, and it scrolls the minimum distance rather than
+// centring the plot. Yanking the viewport out from under someone who is looking
+// at the schematic is worse than the problem being solved.
+const PLOT_VISIBLE_MIN = 90; // px of plot card that counts as "you can see it"
+function revealPlots() {
+  const card = document.querySelector('#plots .chartcard');
+  if (!card || typeof card.getBoundingClientRect !== 'function') return;
+  const r = card.getBoundingClientRect();
+  if (!r.height) return;
+  const shown = Math.min(r.bottom, window.innerHeight) - Math.max(r.top, 0);
+  if (shown >= Math.min(PLOT_VISIBLE_MIN, r.height)) return; // enough already
+  const want = Math.min(PLOT_VISIBLE_MIN, r.height);
+  const by = Math.round(r.top - (window.innerHeight - want));
+  if (by <= 0) return;
+  // Smooth only when motion is welcome. Two reasons, one of which is not
+  // accessibility: a smooth scroll is driven by the compositor, so in any
+  // context that is not painting (a hidden tab, an automated browser) it is
+  // silently a no-op and the backstop quietly does nothing. An instant scroll
+  // always lands.
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  window.scrollBy({ top: by, behavior: reduce ? 'auto' : 'smooth' });
 }
 
 // ---- demo circuit ----
@@ -12945,6 +13279,7 @@ buildLibrary(); // populate the left Library drawer once (DEFS is static)
 syncLibraryUI(); // apply persisted Library (left sidebar) preference before first layout
 syncParamsUI(); // apply persisted Params-rail visibility preference
 syncScienceUI(); // apply persisted Science-rail visibility preference
+syncAboutUI(); // show the description unless this visitor dismissed it before
 buildExamplesMenu(); // populate the Examples picker from the embedded set
 bootFromUrl(); // ?example=<name> if present and known, else the Demo circuit
 onCanvasResize(); // sync the camera to the element's real aspect (VIEW0's 680:340 is only nominal)
