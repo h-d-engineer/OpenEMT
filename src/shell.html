@@ -391,6 +391,11 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
 .emt .frac .den{padding:0 4px}
 .emt .scisub{font-size:11px;color:var(--tx3);margin:0 0 8px}
 .emt .scisub b{color:var(--acc);font-weight:600}
+/* The contributor call to action under each block's verification status. */
+.emt .valcta{display:inline-block;margin-top:6px;font-size:11px;font-weight:600;color:var(--acc);
+  text-decoration:none;border:1px solid var(--acc);border-radius:6px;padding:3px 8px}
+.emt .valcta:hover{background:var(--accf);color:var(--acct);border-color:var(--accf)}
+.emt .valcta:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 .emt .cct{display:block;width:100%;max-width:360px;height:auto;margin:6px 0 2px}
 </style>
 </head>
@@ -441,7 +446,7 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
     <button id="redobtn" onclick="redo()" disabled title="Redo (Ctrl+Y / Ctrl+Shift+Z)">&#8631; Redo</button>
     <button onclick="delSelected()">Delete</button>
     <button onclick="clearAll()">Clear</button>
-    <button onclick="openLayoutDialog()">Layout</button>
+    <button onclick="autoLayout()" title="Arrange the circuit automatically (best fit). Ctrl+Z undoes it.">Layout</button>
     <button id="widebtn" onclick="toggleWide()" title="Fill the available screen width (for wide monitors).">&#x2194; Wide</button>
     <button id="parambtn" onclick="toggleParams()" title="Show/hide the parameter panel that appears when a block is selected. Off keeps the canvas unobstructed while navigating and rearranging.">&#9881; Params</button>
     <button id="scibtn" onclick="toggleScience()" title="Show/hide the physics/equations panel that appears when a block is selected. Off keeps the canvas unobstructed while navigating and rearranging.">&#9883; Science</button>

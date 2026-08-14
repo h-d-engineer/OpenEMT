@@ -391,6 +391,11 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
 .emt .frac .den{padding:0 4px}
 .emt .scisub{font-size:11px;color:var(--tx3);margin:0 0 8px}
 .emt .scisub b{color:var(--acc);font-weight:600}
+/* The contributor call to action under each block's verification status. */
+.emt .valcta{display:inline-block;margin-top:6px;font-size:11px;font-weight:600;color:var(--acc);
+  text-decoration:none;border:1px solid var(--acc);border-radius:6px;padding:3px 8px}
+.emt .valcta:hover{background:var(--accf);color:var(--acct);border-color:var(--accf)}
+.emt .valcta:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 .emt .cct{display:block;width:100%;max-width:360px;height:auto;margin:6px 0 2px}
 </style>
 </head>
@@ -441,7 +446,7 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
     <button id="redobtn" onclick="redo()" disabled title="Redo (Ctrl+Y / Ctrl+Shift+Z)">&#8631; Redo</button>
     <button onclick="delSelected()">Delete</button>
     <button onclick="clearAll()">Clear</button>
-    <button onclick="openLayoutDialog()">Layout</button>
+    <button onclick="autoLayout()" title="Arrange the circuit automatically (best fit). Ctrl+Z undoes it.">Layout</button>
     <button id="widebtn" onclick="toggleWide()" title="Fill the available screen width (for wide monitors).">&#x2194; Wide</button>
     <button id="parambtn" onclick="toggleParams()" title="Show/hide the parameter panel that appears when a block is selected. Off keeps the canvas unobstructed while navigating and rearranging.">&#9881; Params</button>
     <button id="scibtn" onclick="toggleScience()" title="Show/hide the physics/equations panel that appears when a block is selected. Off keeps the canvas unobstructed while navigating and rearranging.">&#9883; Science</button>
@@ -7849,11 +7854,23 @@ function pushHistory(snap) {
 // line): shows which file is loaded; "•" = modified since load/save. Not part
 // of undo state — undoing an edit doesn't promise the file matches again.
 let projName = 'Demo';
+let projDirty = false;
 function setProj(name, dirty) {
   if (name != null) projName = name;
+  projDirty = !!dirty;
   const el = document.getElementById('projname');
   if (el) el.textContent = projName + (dirty ? ' •' : '');
 }
+// Closing the tab discarded an afternoon's work without asking. The dirty flag
+// and its bullet marker already existed; nothing acted on them, and there is no
+// autosave and no recovery. Browsers show their own wording here and only honour
+// it after a real interaction with the page, so this cannot nag someone who just
+// looked at the landing case and left.
+window.addEventListener('beforeunload', e => {
+  if (!projDirty) return;
+  e.preventDefault();
+  e.returnValue = ''; // required by older browsers to trigger the prompt
+});
 function restoreSnapshot(snap) {
   touchModel(); // undo/redo can restore any topology or parameter change
   S.blocks = snap.blocks; S.wires = snap.wires; S.plots = snap.plots;
@@ -9449,10 +9466,19 @@ function validationNote(type) {
       + 'damping and the switching instants are not independently checked',
     Low: 'checked against an exact phasor or a node identity, several to within 1e-9',
   }[tier];
+  // The call to action. This paragraph is the most honest thing in the app and
+  // it used to end in a full stop. Anyone reading it who holds a PSCAD, PSS/E,
+  // PowerFactory or EMTP-RV seat is exactly the contributor the project needs,
+  // and they are reading it at the moment they care: while judging whether to
+  // trust this block. The link carries the block type so the report arrives
+  // already saying which one it is about.
+  const url = 'https://github.com/h-d-engineer/OpenEMT/issues/new'
+    + '?template=04-block-validation.yml&title=' + encodeURIComponent('Validation: ' + type);
   return '<span class="hint"><b>Verification:</b> ' + tier + ' cross-check priority, ' + what
     + '. No block in OpenEMT has been cross-checked against a commercial EMT program yet, which is why '
     + 'results are not certified for engineering decisions. See VALIDATION.md for this block\'s checks '
-    + 'and tolerances.</span>';
+    + 'and tolerances.<br><a class="valcta" href="' + url + '" target="_blank" rel="noopener noreferrer">'
+    + 'Have a commercial EMT licence? Report a cross-check for ' + escAttr(type) + '</a></span>';
 }
 
 // ---- Science / formula panel (educational layer, SPEC §5). One block at a
@@ -11253,6 +11279,18 @@ function selectLayoutDir(dir) {
 function applyLayout() {
   doHierarchicalLayout(layoutDir);
   closeLayoutDialog();
+}
+// The toolbar's Layout button. Two of the dialog's three options are disabled
+// while busAwareLayout() learns to transpose, so opening it presented a chooser
+// whose main content was two refusals. Being honest about the limitation is
+// right; making the user dismiss a dialog to reach the only working option is
+// not. This applies Best fit directly and says so. Restore openLayoutDialog()
+// as the handler once the fixed-direction layouts work (IDEAS.md).
+function autoLayout() {
+  if (!S.blocks.length) { showWarn('Nothing to lay out: the canvas is empty.'); return; }
+  layoutDir = 'fit';
+  doHierarchicalLayout('fit');
+  setStatus('Laid out ' + S.blocks.length + ' blocks (best fit). Ctrl+Z to undo.');
 }
 
 // ---- Bus-aware layout for meshed power networks (DECISIONS.md 2026-07-15) ----
