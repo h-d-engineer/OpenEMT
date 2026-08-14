@@ -271,6 +271,13 @@ function rotateSelected() {
 }
 document.addEventListener('keydown', e => {
   const tag = (e.target.tagName || '').toLowerCase();
+  // Escape closes the numerics popover BEFORE the typing guard below, because
+  // the popover contains number inputs: checking after it would make Escape
+  // dead exactly when the focus is inside the thing you want to dismiss.
+  if (e.key === 'Escape') {
+    const pop = document.getElementById('simadv');
+    if (pop && pop.style.display !== 'none') { e.preventDefault(); closeSimAdv(); return; }
+  }
   if (tag === 'input' || tag === 'textarea' || tag === 'select') return; // don't hijack typing
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
@@ -3794,6 +3801,57 @@ function toggleScience() {
   localStorage.setItem('emt_sci', on ? '1' : '0');
   syncScienceUI();
 }
+// The description paragraph under the title. Shown by DEFAULT (absent key), not
+// hidden: it is the only thing on the page that says what OpenEMT is and that
+// results are not certified, so a first-time visitor must get it. Once
+// dismissed the choice sticks, which is what buys back the 44px of height that
+// pushed the plots below the fold for the people who already know.
+// Note the polarity is the inverse of the rail toggles above: those persist "1"
+// for shown, this persists "1" for HIDDEN, because the default differs.
+function syncAboutUI() {
+  const el = document.getElementById('about');
+  const btn = document.getElementById('infobtn');
+  const hidden = localStorage.getItem('emt_about') === '1';
+  if (el) el.hidden = hidden;
+  if (btn) btn.classList.toggle('on', !hidden);
+}
+function toggleAbout() {
+  const hidden = localStorage.getItem('emt_about') !== '1'; // flip
+  localStorage.setItem('emt_about', hidden ? '1' : '0');
+  syncAboutUI();
+  onCanvasResize(); // the row appearing/disappearing changes the canvas aspect
+}
+// Numerics popover (time step, plot step, flow arrows), anchored under its gear
+// button. Not persisted: it is a transient panel, not a layout preference.
+function toggleSimAdv(ev) {
+  const pop = document.getElementById('simadv');
+  const btn = document.getElementById('simadvbtn');
+  if (!pop || !btn) return;
+  const open = pop.style.display === 'none';
+  pop.style.display = open ? 'flex' : 'none';
+  btn.classList.toggle('on', open);
+  if (open) {
+    // Position relative to .emt, which is the nearest positioned ancestor.
+    const host = document.querySelector('.emt').getBoundingClientRect();
+    const b = btn.getBoundingClientRect();
+    pop.style.top = (b.bottom - host.top + 6) + 'px';
+    // Keep it on screen when the gear sits near the right edge.
+    pop.style.left = Math.max(0, Math.min(b.left - host.left, host.width - 240)) + 'px';
+  }
+  if (ev) ev.stopPropagation();
+}
+function closeSimAdv() {
+  const pop = document.getElementById('simadv');
+  const btn = document.getElementById('simadvbtn');
+  if (pop && pop.style.display !== 'none') { pop.style.display = 'none'; if (btn) btn.classList.remove('on'); }
+}
+// Dismiss on an outside click or Escape, the two things every popover must do.
+document.addEventListener('mousedown', e => {
+  const pop = document.getElementById('simadv');
+  if (!pop || pop.style.display === 'none') return;
+  if (pop.contains(e.target) || e.target.closest('#simadvbtn')) return;
+  closeSimAdv();
+});
 
 // ---- save / load ----
 // Run settings travel WITH the circuit. Without this a case whose first event
@@ -5334,6 +5392,7 @@ buildLibrary(); // populate the left Library drawer once (DEFS is static)
 syncLibraryUI(); // apply persisted Library (left sidebar) preference before first layout
 syncParamsUI(); // apply persisted Params-rail visibility preference
 syncScienceUI(); // apply persisted Science-rail visibility preference
+syncAboutUI(); // show the description unless this visitor dismissed it before
 buildExamplesMenu(); // populate the Examples picker from the embedded set
 bootFromUrl(); // ?example=<name> if present and known, else the Demo circuit
 onCanvasResize(); // sync the camera to the element's real aspect (VIEW0's 680:340 is only nominal)

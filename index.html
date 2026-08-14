@@ -40,8 +40,19 @@ body{margin:0;padding:16px;background:#f0efe9;display:flex;justify-content:cente
 .emt{--sfc:#ffffff;--sfc1:#f5f4ef;--bd:rgba(0,0,0,.18);--bds:rgba(0,0,0,.45);--tx:#1a1a18;--tx2:#52514e;--tx3:#6b6963;--acc:#2570cc;--accf:#2570cc;--acct:#ffffff;
 max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-size:13px;color:var(--tx);position:relative}
 @media(prefers-color-scheme:dark){.emt{--sfc:#2e2e2b;--sfc1:#232320;--bd:rgba(255,255,255,.22);--bds:rgba(255,255,255,.55);--tx:#eceae4;--tx2:#c3c2b7;--tx3:#9b9993;--acc:#5c9ce6;--accf:#6fa8e4;--acct:#1d1d1b}}
-.emt h1{font-size:18px;font-weight:600;margin:0 0 2px}
-.emt .sub{font-size:12px;color:var(--tx3);margin:0 0 12px}
+/* The brand sits in the status row, so it is sized to that row (13px) rather
+   than as a page heading. Still an h1: it is the document's title for
+   assistive tech and search, only its presentation changed. */
+.emt h1.brand{font-size:13px;font-weight:700;margin:0;letter-spacing:-.01em;white-space:nowrap;flex:none}
+.emt .infobtn{flex:none;font-size:13px;line-height:1;padding:2px 6px;background:transparent;
+  color:var(--tx2);border:1px solid var(--bd);border-radius:6px;cursor:pointer}
+.emt .infobtn:hover{background:var(--sfc1);color:var(--tx)}
+.emt .infobtn.on{background:var(--accf);color:var(--acct);border-color:var(--accf)}
+.emt .sub{font-size:12px;color:var(--tx3);margin:0 0 8px;max-width:96ch}
+.emt .sub[hidden]{display:none}
+.emt .aboutx{font-size:11px;margin-left:8px;padding:1px 8px;background:transparent;color:var(--tx2);
+  border:1px solid var(--bd);border-radius:6px;cursor:pointer;white-space:nowrap}
+.emt .aboutx:hover{background:var(--sfc1);color:var(--tx)}
 .emt .pal{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center}
 .emt .pal button{font-size:12px;padding:5px 10px;background:transparent;color:var(--tx);border:1px solid var(--bds);border-radius:8px;cursor:pointer}
 .emt .pal button:hover{background:var(--sfc1)}
@@ -131,14 +142,30 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
 .emt .zmode button.on{background:var(--accf);color:var(--acct);border-color:var(--accf)}
 .emt .hint{font-size:11px;color:var(--tx3);margin-top:4px}
 .emt .statusline{font-size:12px;color:var(--tx3)}
-.emt .statusrow{display:flex;gap:10px;align-items:baseline;margin-bottom:6px}
+/* align-items:center (was baseline) because the row now carries the brand and
+   the info button alongside the text, and a baseline would hang the button
+   below the line. min-width:0 on the status text lets it shrink instead of
+   pushing the find box off the row. */
+.emt .statusrow{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+.emt .statusline{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Numerics popover, opened by the gear in the Sim cluster. Same floating-panel
+   language as .picker and .layoutdialog. */
+.emt .simadv{position:absolute;z-index:22;background:var(--sfc);border:1px solid var(--bds);
+  border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.3);padding:10px 12px;
+  display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.emt .simadv-hd{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3)}
+#simadvbtn.on{background:var(--accf);color:var(--acct);border-color:var(--accf)}
 /* Find box: sits in the status row rather than floating over the canvas,
    because the params and science rails already occupy both canvas edges
    (top:8px to bottom:8px) and a floating find bar would collide with them.
    Always visible, so the feature is discoverable without knowing the key. */
-.emt .findbox{position:relative;display:flex;align-items:center;gap:6px;flex:none}
-.emt .findbox input{width:172px;height:24px;font-size:12px;padding:0 7px;border:1px solid var(--bd);
-  border-radius:6px;background:var(--sfc);color:var(--tx)}
+/* flex:0 1 auto with min-width:0, NOT flex:none. The status row gained the
+   brand and the info button, and a rigid 172px find box then pushed the row
+   past a 375px viewport and gave the whole page a horizontal scrollbar. The
+   input shrinks to 96px before anything else gives. */
+.emt .findbox{position:relative;display:flex;align-items:center;gap:6px;flex:0 1 auto;min-width:0}
+.emt .findbox input{flex:1 1 96px;min-width:0;max-width:172px;height:24px;font-size:12px;padding:0 7px;
+  border:1px solid var(--bd);border-radius:6px;background:var(--sfc);color:var(--tx)}
 .emt .findbox input:focus{outline:none;border-color:var(--acc)}
 .emt .findcount{font-size:11px;color:var(--tx3);white-space:nowrap;min-width:40px}
 .emt .findlist{position:absolute;right:0;top:28px;z-index:30;width:262px;max-height:300px;overflow:auto;
@@ -261,8 +288,28 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
 </head>
 <body>
 <div class="emt">
-<h1>OpenEMT</h1>
-<p class="sub">The electromagnetic transient simulator built for AI agents. Trapezoidal nodal solver with steady-state power flow and machine initialization, addressable from this canvas, a CLI, or an MCP server. Beta: provided as is, results are not certified for engineering decisions.</p>
+<!-- Identity, project and status share one row, and the toolbar follows it.
+     They used to be three stacked blocks (h1, then the description paragraph,
+     then the toolbar) costing 68px of height above a canvas that already
+     pushed the plots off the bottom of a 720px laptop screen. The description
+     is still shown on a first visit, because it is the only thing that tells a
+     visitor what this is, but dismissing it now persists. -->
+<div class="statusrow">
+  <h1 class="brand">OpenEMT</h1>
+  <button class="infobtn" id="infobtn" onclick="toggleAbout()"
+    title="What OpenEMT is, and the beta caveat">&#9432;</button>
+  <span class="projname" id="projname" title="Loaded circuit &mdash; &bull; marks unsaved changes">Demo</span>
+  <div class="statusline" id="stat" style="flex:1">Demo: breaker energizes the feeder at t = 30 ms. Press / to find a block by name. Click blocks to edit, drag to move, click two terminals to wire. Click a wire to highlight what it connects (Delete removes it). Scroll or use +/&minus; to zoom, drag empty canvas to pan. Select a block and press R to rotate it 90&deg;.</div>
+  <div class="findbox" id="findbox">
+    <input id="findq" type="text" autocomplete="off" spellcheck="false" placeholder="Find block  &#47;"
+      title="Find a block by name, type or id. Press / from anywhere to jump here; Up/Down previews each match, Enter selects it and Enter again steps to the next, Esc leaves the search and returns to where you were."
+      oninput="findType()" onkeydown="findKey(event)">
+    <span class="findcount" id="findcount"></span>
+    <div class="findlist" id="findlist" style="display:none"></div>
+  </div>
+</div>
+<p class="sub" id="about">The electromagnetic transient simulator built for AI agents. Trapezoidal nodal solver with steady-state power flow and machine initialization, addressable from this canvas, a CLI, or an MCP server. Beta: provided as is, results are not certified for engineering decisions.
+  <button class="aboutx" onclick="toggleAbout()" title="Hide this (the &#9432; button brings it back)">Dismiss</button></p>
 
 <div class="pal">
   <div class="tcl"><span class="tcl-l">Blocks</span>
@@ -309,18 +356,16 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
     <span class="mode"><label>Duration</label>
       <input type="number" id="duration" value="120" min="10" max="60000" step="10" style="width:70px;height:26px">ms
     </span>
-    <span class="mode" title="Solver's internal trapezoidal step. Smaller = more accurate but slower; larger risks numerical ringing.">
-      <label>Time step</label>
-      <input type="number" id="dtus" value="50" min="1" max="1000" step="5" style="width:60px;height:26px">&micro;s
-    </span>
-    <span class="mode" title="How often a solved step is kept for plotting. Blank/0 = auto (keeps every solver sample on normal runs, only thinning very long runs to cap storage). Must be &#8805; time step. The readout after the field shows the spacing actually used by the last run.">
-      <label>Plot step</label>
-      <input type="number" id="plotus" value="" min="0" max="1000000" step="10" placeholder="auto" style="width:66px;height:26px">&micro;s
-      <span id="plotstepinfo" class="zoominfo" style="margin-left:4px"></span>
-    </span>
-    <span class="mode" title="Animated markers on each wire showing which way active (blue, upper) and reactive (yellow, lower) power are flowing.">
-      <label><input type="checkbox" id="flowtoggle" checked onchange="render()"> Flow arrows</label>
-    </span>
+    <!-- Numerics and the flow-arrow toggle live behind this button rather than
+         inline. The Sim cluster measured 872px of a 1233px row, which on its
+         own forced the toolbar from two rows to three (Sim + Run came to 1238px
+         and missed fitting by five pixels). These are the controls a user sets
+         once and then leaves, unlike Phases, V and Duration.
+         V (PH/LL) deliberately stays inline: it silently rescales every voltage
+         in the circuit, and burying a control with that much blast radius is
+         how the sqrt(3) trap in CLAUDE.md gets sprung. -->
+    <button id="simadvbtn" onclick="toggleSimAdv(event)"
+      title="Numerics: solver time step, plot sampling, and flow arrows.">&#9881;</button>
   </div>
   <div class="tcl"><span class="tcl-l">Run</span>
     <button id="pfbtn" onclick="solvePF()" title="Solve the steady-state power flow and annotate each bus with |V| (pu) and angle (green in the 0.95 to 1.05 band, red outside).">&#9878; Power flow</button>
@@ -331,16 +376,20 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
     <button id="stopbtn" onclick="stopSim()" disabled>&#9632; Stop</button>
   </div>
 </div>
-<div class="statusrow">
-  <span class="projname" id="projname" title="Loaded circuit — &bull; marks unsaved changes">Demo</span>
-  <div class="statusline" id="stat" style="flex:1">Demo: breaker energizes the feeder at t = 30 ms. Press / to find a block by name. Click blocks to edit, drag to move, click two terminals to wire. Click a wire to highlight what it connects (Delete removes it). Scroll or use +/&minus; to zoom, drag empty canvas to pan. Select a block and press R to rotate it 90&deg;.</div>
-  <div class="findbox" id="findbox">
-    <input id="findq" type="text" autocomplete="off" spellcheck="false" placeholder="Find block  &#47;"
-      title="Find a block by name, type or id. Press / from anywhere to jump here; Up/Down previews each match, Enter selects it and Enter again steps to the next, Esc leaves the search and returns to where you were."
-      oninput="findType()" onkeydown="findKey(event)">
-    <span class="findcount" id="findcount"></span>
-    <div class="findlist" id="findlist" style="display:none"></div>
-  </div>
+<div id="simadv" class="simadv" style="display:none">
+  <div class="simadv-hd">Numerics</div>
+  <span class="mode" title="Solver's internal trapezoidal step. Smaller = more accurate but slower; larger risks numerical ringing.">
+    <label>Time step</label>
+    <input type="number" id="dtus" value="50" min="1" max="1000" step="5" style="width:60px;height:26px">&micro;s
+  </span>
+  <span class="mode" title="How often a solved step is kept for plotting. Blank/0 = auto (keeps every solver sample on normal runs, only thinning very long runs to cap storage). Must be &#8805; time step. The readout after the field shows the spacing actually used by the last run.">
+    <label>Plot step</label>
+    <input type="number" id="plotus" value="" min="0" max="1000000" step="10" placeholder="auto" style="width:66px;height:26px">&micro;s
+    <span id="plotstepinfo" class="zoominfo" style="margin-left:4px"></span>
+  </span>
+  <span class="mode" title="Animated markers on each wire showing which way active (blue, upper) and reactive (yellow, lower) power are flowing.">
+    <label><input type="checkbox" id="flowtoggle" checked onchange="render()"> Flow arrows</label>
+  </span>
 </div>
 
 <div class="main">
@@ -7898,6 +7947,13 @@ function rotateSelected() {
 }
 document.addEventListener('keydown', e => {
   const tag = (e.target.tagName || '').toLowerCase();
+  // Escape closes the numerics popover BEFORE the typing guard below, because
+  // the popover contains number inputs: checking after it would make Escape
+  // dead exactly when the focus is inside the thing you want to dismiss.
+  if (e.key === 'Escape') {
+    const pop = document.getElementById('simadv');
+    if (pop && pop.style.display !== 'none') { e.preventDefault(); closeSimAdv(); return; }
+  }
   if (tag === 'input' || tag === 'textarea' || tag === 'select') return; // don't hijack typing
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
@@ -11421,6 +11477,57 @@ function toggleScience() {
   localStorage.setItem('emt_sci', on ? '1' : '0');
   syncScienceUI();
 }
+// The description paragraph under the title. Shown by DEFAULT (absent key), not
+// hidden: it is the only thing on the page that says what OpenEMT is and that
+// results are not certified, so a first-time visitor must get it. Once
+// dismissed the choice sticks, which is what buys back the 44px of height that
+// pushed the plots below the fold for the people who already know.
+// Note the polarity is the inverse of the rail toggles above: those persist "1"
+// for shown, this persists "1" for HIDDEN, because the default differs.
+function syncAboutUI() {
+  const el = document.getElementById('about');
+  const btn = document.getElementById('infobtn');
+  const hidden = localStorage.getItem('emt_about') === '1';
+  if (el) el.hidden = hidden;
+  if (btn) btn.classList.toggle('on', !hidden);
+}
+function toggleAbout() {
+  const hidden = localStorage.getItem('emt_about') !== '1'; // flip
+  localStorage.setItem('emt_about', hidden ? '1' : '0');
+  syncAboutUI();
+  onCanvasResize(); // the row appearing/disappearing changes the canvas aspect
+}
+// Numerics popover (time step, plot step, flow arrows), anchored under its gear
+// button. Not persisted: it is a transient panel, not a layout preference.
+function toggleSimAdv(ev) {
+  const pop = document.getElementById('simadv');
+  const btn = document.getElementById('simadvbtn');
+  if (!pop || !btn) return;
+  const open = pop.style.display === 'none';
+  pop.style.display = open ? 'flex' : 'none';
+  btn.classList.toggle('on', open);
+  if (open) {
+    // Position relative to .emt, which is the nearest positioned ancestor.
+    const host = document.querySelector('.emt').getBoundingClientRect();
+    const b = btn.getBoundingClientRect();
+    pop.style.top = (b.bottom - host.top + 6) + 'px';
+    // Keep it on screen when the gear sits near the right edge.
+    pop.style.left = Math.max(0, Math.min(b.left - host.left, host.width - 240)) + 'px';
+  }
+  if (ev) ev.stopPropagation();
+}
+function closeSimAdv() {
+  const pop = document.getElementById('simadv');
+  const btn = document.getElementById('simadvbtn');
+  if (pop && pop.style.display !== 'none') { pop.style.display = 'none'; if (btn) btn.classList.remove('on'); }
+}
+// Dismiss on an outside click or Escape, the two things every popover must do.
+document.addEventListener('mousedown', e => {
+  const pop = document.getElementById('simadv');
+  if (!pop || pop.style.display === 'none') return;
+  if (pop.contains(e.target) || e.target.closest('#simadvbtn')) return;
+  closeSimAdv();
+});
 
 // ---- save / load ----
 // Run settings travel WITH the circuit. Without this a case whose first event
@@ -12961,6 +13068,7 @@ buildLibrary(); // populate the left Library drawer once (DEFS is static)
 syncLibraryUI(); // apply persisted Library (left sidebar) preference before first layout
 syncParamsUI(); // apply persisted Params-rail visibility preference
 syncScienceUI(); // apply persisted Science-rail visibility preference
+syncAboutUI(); // show the description unless this visitor dismissed it before
 buildExamplesMenu(); // populate the Examples picker from the embedded set
 bootFromUrl(); // ?example=<name> if present and known, else the Demo circuit
 onCanvasResize(); // sync the camera to the element's real aspect (VIEW0's 680:340 is only nominal)

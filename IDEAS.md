@@ -420,7 +420,12 @@ differentiator and currently the weakest surface):*
 - **The rails cover the canvas they annotate.** On a 345px canvas the science
   rail is 241px (70%), params 217px (63%), library 189px (55%). The floating
   drawer model is right on a monitor and wrong on a phone, where these want to
-  be bottom sheets under 760px.
+  be bottom sheets under 760px. They also overflow outright: with the Library
+  open and a block selected, `.emt.lib .props` sits at `left:184px` and is
+  196px wide, so it reaches 380px on a 375px viewport and gives the page a
+  horizontal scrollbar. Measured 2026-08-13 and confirmed to predate the Phase
+  1 work; left alone deliberately, since the bottom-sheet rework replaces this
+  geometry rather than adjusting it.
 - Acceptance test, on real hardware rather than an emulator: place three blocks,
   wire them, ground it, and run, without pinch zooming.
 
