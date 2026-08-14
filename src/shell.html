@@ -331,7 +331,10 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
   <button class="infobtn" id="infobtn" onclick="toggleAbout()"
     title="What OpenEMT is, and the beta caveat">&#9432;</button>
   <span class="projname" id="projname" title="Loaded circuit. &bull; marks unsaved changes">Demo</span>
-  <div class="statusline" id="stat" style="flex:1">Demo: breaker energizes the feeder at t = 30 ms. Press / to find a block by name. Click blocks to edit, drag to move, click two terminals to wire. Click a wire to highlight what it connects (Delete removes it). Scroll or use +/&minus; to zoom, drag empty canvas to pan. Select a block and press R to rotate it 90&deg;.</div>
+  <!-- Replaced within ~400ms by whatever the landing case reports, so this is
+       the pre-boot state, not onboarding. The interaction model needs a home
+       that does not self-destruct; that is Phase 3 in IDEAS.md. -->
+  <div class="statusline" id="stat" style="flex:1">Loading&#8230;</div>
   <div class="findbox" id="findbox">
     <input id="findq" type="text" autocomplete="off" spellcheck="false" placeholder="Find block  &#47;"
       title="Find a block by name, type or id. Press / from anywhere to jump here; Up/Down previews each match, Enter selects it and Enter again steps to the next, Esc leaves the search and returns to where you were."
@@ -344,7 +347,7 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
   <button class="aboutx" onclick="toggleAbout()" title="Hide this (the &#9432; button brings it back)">Dismiss</button></p>
 <div class="notice" id="notice" role="status" aria-live="polite">
   <span class="notice-t"><span class="notice-l" id="noticelab"></span><span id="noticemsg"></span></span>
-  <button onclick="clearNotice()" title="Dismiss">Dismiss</button>
+  <button onclick="clearNotice(true)" title="Dismiss">Dismiss</button>
 </div>
 
 <div class="pal">

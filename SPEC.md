@@ -3670,8 +3670,14 @@ currents are convention-independent.
 | probe | 1         | —                             | V recorder; on a 3-ph AC node also reports node frequency f (Hz) from a local SRF-PLL |
 | bus   | taps (1+) | name (text), taps, len, Vbase (V, 0=slack-derived), Vhi, Vlo (pu, 0=0.95/1.05 default), area, zone, owner (ids) | junction — self-unions all taps to one node, no branch; node voltage auto-monitored (plots); Vbase is the bus's own per-unit base for power-flow annotation (vconv-scaled, reporting only); Vhi/Vlo drive the per-bus canvas voltage band (PSS/E NVHI/NVLO), area/zone/owner are inert grouping metadata; on a 3-ph AC node the bus also reports node frequency f (Hz), same measurement as probe |
 
-Demo circuit preloaded: src → brk(t=30ms) → line → load, grounded both ends,
-probe on load bus. Shows point-on-wave energization asymmetry across phases.
+Landing case: `examples/showcase.json`, loaded and run automatically when there
+is no `?example=` in the URL (changed 2026-08-13; see DECISIONS.md). It shows a
+phase-A-to-ground fault at 55 ms clearing at 85 ms through a 2:1 transformer,
+with a GFM droop inverter on the secondary bus: the faulted phase collapses to
+28 V while the healthy phases swell to 434 V and 369 V, then all three recover.
+The older programmatic demo (src, brk at 30 ms, line, load, grounded both ends,
+probe on the load bus, showing point-on-wave energization asymmetry) remains in
+`loadDemo()` as the fallback if the embedded examples are ever unavailable.
 
 ## 5. Roadmap (priority order)
 

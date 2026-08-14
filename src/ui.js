@@ -4069,22 +4069,49 @@ function buildExamplesMenu() {
 // Startup: honour ?example=<name>[&pf=1][&run=1], else the built-in Demo.
 // The name is matched against the embedded keys and nothing else, so the
 // parameter can never reach a path, a URL, or the filesystem.
+// The case a visitor lands on with no ?example= in the URL.
+//
+// This used to be loadDemo(): a source, a breaker, a line and a resistor, built
+// in code. It solved and plotted correctly, and the plot was a clean
+// energization step into a resistive load, which does not show what an EMT
+// solver is FOR. showcase.json is a real transient: a phase-A-to-ground fault
+// at 55 ms clearing at 85 ms, seen through a 2:1 transformer, with a GFM droop
+// inverter dispatching into the secondary bus. Same first ten seconds of the
+// visit, a far better answer to "what does this thing do".
+//
+// loadDemo() stays as the fallback. It needs no data beyond its own code, so it
+// is the one thing that still works if the embedded examples are ever missing
+// or malformed, and a landing page that renders nothing is the worst outcome
+// here.
+const LANDING_EXAMPLE = 'showcase';
+function loadLanding() {
+  if (!Object.prototype.hasOwnProperty.call(EXAMPLES, LANDING_EXAMPLE)
+      || !loadExampleByName(LANDING_EXAMPLE)) { loadDemo(); return; }
+  history = []; future = []; updateUndoButtons(); // arriving is not a user edit
+  // The file carries sim.pfinit, which applyCircuit has already put on the
+  // checkbox, and runEMTLive() solves the power flow itself when it is set. So
+  // this is just a run, not a run plus a separate PF step.
+  setTimeout(runEMTLive, 400);
+}
 function bootFromUrl() {
   let p;
   try { p = new URLSearchParams(location.search); } catch (e) { p = null; }
   const want = p && p.get('example');
   if (!want || !Object.prototype.hasOwnProperty.call(EXAMPLES, want)) {
     if (want) {
-      loadDemo(false); // keep the message below readable
-      document.getElementById('stat').textContent =
-        'No such example: ' + want + '. Showing the Demo circuit instead. '
-        + 'Pick one from the Examples menu.';
+      // The complaint now lives in the notice band, which survives the landing
+      // case's auto-run. It used to go on the status line, which meant the run
+      // had to be suppressed to keep it readable; that is no longer true, so a
+      // bad link lands on something working instead of a bare circuit.
+      showError('No such example: "' + want + '". Showing ' + LANDING_EXAMPLE
+        + ' instead. Pick another from the Examples menu.', true); // survives the landing run
+      loadLanding();
       return;
     }
-    loadDemo();
+    loadLanding();
     return;
   }
-  if (!loadExampleByName(want)) { loadDemo(); return; }
+  if (!loadExampleByName(want)) { loadLanding(); return; }
   history = []; future = []; updateUndoButtons(); // arriving via a link is not a user edit
   const on = (k) => { const v = p.get(k); return v !== null && v !== '0' && v !== 'false'; };
   if (on('pf')) { try { solvePF(); } catch (e) { console.warn('[deeplink] pf:', e); } }
@@ -4980,7 +5007,12 @@ function phaseLabel(d) { return d.dc ? 'DC' : (d.phase == null ? '' : PH_LBL[d.p
 // stays until it is dismissed or replaced. Never truncate here: the second half
 // of "...set Fov and Fuv to 0, or place this relay on a full 3-phase node" is
 // the half that tells you what to do.
-function setNotice(msg, level) {
+// `sticky` marks a notice that a later successful run must NOT retract, because
+// it is not a claim about whether the circuit runs. The case that forced this:
+// a bad ?example= link complains and then lands on the working landing case, so
+// the run that follows would clear the very message explaining the redirect.
+// Only an explicit dismiss clears a sticky notice.
+function setNotice(msg, level, sticky) {
   const box = document.getElementById('notice');
   const lab = document.getElementById('noticelab');
   const txt = document.getElementById('noticemsg');
@@ -4988,14 +5020,19 @@ function setNotice(msg, level) {
   txt.textContent = msg;
   if (lab) lab.textContent = level === 'warn' ? 'Warning' : 'Cannot run this circuit';
   box.className = 'notice on ' + (level === 'warn' ? 'warn' : 'err');
+  box.dataset.sticky = sticky ? '1' : '';
   syncCanvasHeight(); onCanvasResize(); // the band changes the canvas top
 }
-function showError(msg) { setNotice(msg, 'err'); }
-function showWarn(msg) { setNotice(msg, 'warn'); }
-function clearNotice() {
+function showError(msg, sticky) { setNotice(msg, 'err', sticky); }
+function showWarn(msg, sticky) { setNotice(msg, 'warn', sticky); }
+// force=true is the Dismiss button and anything else the user drove directly.
+// force=false (the default, used at the start of a run) leaves sticky notices.
+function clearNotice(force) {
   const box = document.getElementById('notice');
   if (!box || !box.classList.contains('on')) return;
+  if (!force && box.dataset.sticky === '1') return;
   box.className = 'notice';
+  box.dataset.sticky = '';
   syncCanvasHeight(); onCanvasResize();
 }
 
