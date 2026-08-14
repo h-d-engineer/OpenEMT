@@ -3821,3 +3821,49 @@ same loop also used, so every render threw and the arrows vanished. Both test
 suites stayed green: it is a browser render path, invisible to them. The browser
 check caught it. Anything that only exists at paint time needs to be exercised
 at paint time.
+
+## 2026-08-14: ieee_harmonics_14bus made EMT-runnable, and two touch gestures
+
+**The 14-bus case needed both standard RAW-import fixes.** It is the worked
+example of what it takes to turn an imported power-flow case into a valid
+transient model, and both obstacles are generic.
+
+First, two `Yd11` units had nothing grounded on their delta secondaries, so
+those winding sets had no voltage reference and the matrix was singular. Each is
+now grounded through 1 MOhm: that is high-resistance grounding, which is what a
+real delta-fed 13.8 kV or 35.4 kV system actually has. Deliberately a resistance
+and not a capacitance, because a capacitance would add a resonance to a case
+whose entire subject is harmonic resonance. Effect on the power flow: 1.2e-6 pu.
+
+Second, with the matrix solvable it diverged to 400 pu inside a millisecond. All
+11 loads were constant-power, which is right for a load flow and wrong for a
+transient, since a constant-power load behind an impedance is a positive-
+feedback element (the trap already in CLAUDE.md, and the same one that drove
+`ieee39bus` to multi-million volts in July). They are now `zip` loads with pure
+constant-impedance weights, the conventional model for stability and harmonic
+studies alike. Diagnosis was empirical: zeroing every load gave a stable 1.063
+pu, which named the cause before any change was made.
+
+The binding constraint on both fixes was that the published power flow had to
+survive, since this case is the project's closest agreement with a vendor
+solution (3/3 V and angle spot checks against the RAW). It does, exactly. That
+is also what ruled out the easy fix: changing either `Yd11` to `Yy0` would have
+solved the matrix and deleted the experiment, because BUS 301 and BUS 302 carry
+identical loads behind a `Yy0` and a `Yd11` precisely so the two vector groups
+can be compared for harmonic propagation.
+
+**Pinch to zoom had to be written, not enabled.** `touch-action:none` on the
+canvas subtree is what keeps iOS from stealing a mid-drag gesture (issue #15),
+and it also blocks the browser's own pinch. That is the right trade: the browser
+gesture scales the whole page, and what a user pinching a schematic wants is the
+camera. Two fingers zoom and pan together against the same `zoomAt()` the wheel
+uses. A second finger abandons whatever the first started rather than dragging a
+block while the user zooms.
+
+**Safari on iPhone has no Fullscreen API for ordinary elements.** Only a video
+element can go fullscreen there, so `requestFullscreen` is absent and the button
+did nothing on the device where a full-viewport canvas matters most. There is
+now a fixed-position fallback, used when the API is missing and equally when it
+is present but rejects or throws. It uses `100dvh` rather than `100vh`, since on
+mobile Safari `100vh` is the tallest possible viewport and would hide the bottom
+of the canvas under the browser chrome.
