@@ -4,7 +4,7 @@
  "sim": {
   "duration": 200,
   "dtUs": 50,
-  "plotUs": 250,
+  "plotUs": 50,
   "nph": 3,
   "pfinit": true
  },
