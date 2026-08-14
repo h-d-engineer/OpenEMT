@@ -330,7 +330,7 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
   <h1 class="brand">OpenEMT</h1>
   <button class="infobtn" id="infobtn" onclick="toggleAbout()"
     title="What OpenEMT is, and the beta caveat">&#9432;</button>
-  <span class="projname" id="projname" title="Loaded circuit &mdash; &bull; marks unsaved changes">Demo</span>
+  <span class="projname" id="projname" title="Loaded circuit. &bull; marks unsaved changes">Demo</span>
   <div class="statusline" id="stat" style="flex:1">Demo: breaker energizes the feeder at t = 30 ms. Press / to find a block by name. Click blocks to edit, drag to move, click two terminals to wire. Click a wire to highlight what it connects (Delete removes it). Scroll or use +/&minus; to zoom, drag empty canvas to pan. Select a block and press R to rotate it 90&deg;.</div>
   <div class="findbox" id="findbox">
     <input id="findq" type="text" autocomplete="off" spellcheck="false" placeholder="Find block  &#47;"
@@ -453,9 +453,9 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
   <span class="flexpad"></span>
   <span id="zoominfo" class="zoominfo"></span>
   <span class="zmode" id="zoommode" title="What a drag/scroll on a plot zooms. Time (X) is shared by every plot; vertical (Y) is per plot.">
-    <button data-m="x" onclick="setZoomMode('x')" title="Time only — one shared window across every plot">Time</button>
-    <button data-m="y" onclick="setZoomMode('y')" title="Vertical only — rescales this plot's value axes">Value</button>
-    <button data-m="box" onclick="setZoomMode('box')" title="Free rectangle — time and value together">Box</button>
+    <button data-m="x" onclick="setZoomMode('x')" title="Time only: one shared window across every plot">Time</button>
+    <button data-m="y" onclick="setZoomMode('y')" title="Vertical only: rescales this plot's value axes">Value</button>
+    <button data-m="box" onclick="setZoomMode('box')" title="Free rectangle: time and value together">Box</button>
   </span>
   <button onclick="plotZoomBy(1.5)" title="Zoom in">+</button>
   <button onclick="plotZoomBy(1/1.5)" title="Zoom out">&minus;</button>
