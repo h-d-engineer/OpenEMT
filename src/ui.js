@@ -281,7 +281,23 @@ document.addEventListener('keydown', e => {
   if (tag === 'input' || tag === 'textarea' || tag === 'select') return; // don't hijack typing
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+  if (e.ctrlKey || e.metaKey) {
+    const k = e.key.toLowerCase();
+    // Ctrl+S is the one every editor has and this one did not, on an app that
+    // can lose an afternoon's work to a stray Ctrl+W.
+    if (k === 's') { e.preventDefault(); saveCircuit(); return; }
+    if (k === 'c') { e.preventDefault(); copySelection(false); return; }
+    if (k === 'x') { e.preventDefault(); copySelection(true); return; }
+    if (k === 'v') { e.preventDefault(); pasteClipboard(); return; }
+    if (k === 'd') { e.preventDefault(); duplicateSelection(); return; }
+    if (k === 'a') { e.preventDefault(); selectAllBlocks(); return; }
+  }
   if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); focusFind(); return; }
+  if (e.key.startsWith('Arrow') && S.sel.length) {
+    const step = e.shiftKey ? 10 : 1;
+    const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+    if (d) { e.preventDefault(); nudgeSelection(d[0], d[1]); return; }
+  }
   if (e.key.toLowerCase() === 'r' && S.sel.length) { e.preventDefault(); rotateSelected(); return; }
   if ((e.key === 'Delete' || e.key === 'Backspace') && S.sel.length) { e.preventDefault(); delSelected(); return; }
   if ((e.key === 'Delete' || e.key === 'Backspace') && selWire != null) { e.preventDefault(); delSelectedWire(); return; }
@@ -3205,6 +3221,93 @@ function delSelected() {
   render(); showProps();
 }
 
+// ---- clipboard: copy / cut / paste / duplicate ----
+// Building anything repetitive meant a trip to the Library per block plus
+// retyping every parameter. A feeder is the same three blocks over and over,
+// and the app shipped a 39-bus example while offering no way to copy one.
+//
+// The load-bearing part is that a multi-block copy keeps the wiring INTERNAL to
+// the selection. Copying a line plus its breaker and getting two unconnected
+// blocks back is barely better than placing them by hand; the wiring is most of
+// the work. Wires with exactly one end in the selection are dropped, because
+// their other end is a block the paste has no copy of.
+//
+// An in-page clipboard, not the system one: the system clipboard needs a secure
+// context, which file:// is not, and this app is meant to work opened straight
+// off disk. The cost is that copying between two OpenEMT tabs does not work,
+// which Save/Load already covers.
+let clipboard = null;
+const PASTE_OFFSET = 24; // world units, so a paste lands visibly beside the original
+function copySelection(cut) {
+  if (!S.sel.length) { showWarn('Select one or more blocks first, then copy.'); return false; }
+  const ids = new Set(S.sel);
+  const blocks = S.blocks.filter(b => ids.has(b.id));
+  clipboard = {
+    blocks: JSON.parse(JSON.stringify(blocks)),
+    // Store wire ends as INDICES into the copied block array, not block ids:
+    // the ids are reassigned on paste, and an index survives that.
+    wires: S.wires.filter(w => ids.has(w.a[0]) && ids.has(w.b[0])).map(w => ({
+      a: [blocks.findIndex(b => b.id === w.a[0]), w.a[1]],
+      b: [blocks.findIndex(b => b.id === w.b[0]), w.b[1]]
+    }))
+  };
+  if (cut) delSelected();
+  const n = clipboard.blocks.length, m = clipboard.wires.length;
+  setStatus((cut ? 'Cut ' : 'Copied ') + n + ' block' + (n === 1 ? '' : 's')
+    + (m ? ' and ' + m + ' wire' + (m === 1 ? '' : 's') + ' between them' : '')
+    + '. Ctrl+V to paste.');
+  return true;
+}
+// dx/dy let Duplicate reuse this with a fixed offset. Pasted blocks become the
+// new selection, so a second Ctrl+V steps further out rather than stacking.
+function pasteClipboard(dx, dy) {
+  if (!clipboard || !clipboard.blocks.length) {
+    showWarn('Nothing to paste. Select blocks and press Ctrl+C first.'); return;
+  }
+  pushHistory(); touchModel();
+  const ox = dx == null ? PASTE_OFFSET : dx, oy = dy == null ? PASTE_OFFSET : dy;
+  const made = clipboard.blocks.map(src => {
+    const b = JSON.parse(JSON.stringify(src));
+    b.id = S.nextId++; b.x += ox; b.y += oy;
+    // pfInit/pfV are a saved operating point, not part of the model (CLAUDE.md).
+    // Carrying them into a copy would start the new block from another block's
+    // solve, so they are stripped here the same way the build strips them.
+    delete b.pfInit; delete b.pfV;
+    S.blocks.push(b); return b;
+  });
+  clipboard.wires.forEach(w => {
+    if (!made[w.a[0]] || !made[w.b[0]]) return;
+    S.wires.push({ a: [made[w.a[0]].id, w.a[1]], b: [made[w.b[0]].id, w.b[1]] });
+  });
+  S.sel = made.map(b => b.id); selWire = null;
+  // Paste again and the copies walk, rather than piling on the same spot.
+  clipboard.blocks.forEach(b => { b.x += ox; b.y += oy; });
+  const n = made.length, m = clipboard.wires.length;
+  setStatus('Pasted ' + n + ' block' + (n === 1 ? '' : 's')
+    + (m ? ' and ' + m + ' wire' + (m === 1 ? '' : 's') : '') + '. Ctrl+Z to undo.');
+  render(); showProps();
+}
+function duplicateSelection() {
+  if (!S.sel.length) { showWarn('Select one or more blocks first, then duplicate.'); return; }
+  const keep = clipboard;      // Duplicate must not clobber what the user copied
+  if (copySelection(false)) pasteClipboard();
+  clipboard = keep || clipboard;
+}
+function selectAllBlocks() {
+  if (!S.blocks.length) return;
+  S.sel = S.blocks.map(b => b.id); selWire = null;
+  setStatus('Selected all ' + S.sel.length + ' blocks.');
+  render(); showProps();
+}
+// Arrow keys nudge the selection. Shift is the coarse step, matching the grid
+// most schematic editors use, so fine alignment does not need the mouse.
+function nudgeSelection(dx, dy) {
+  if (!S.sel.length) return;
+  pushHistory(); touchModel();
+  S.blocks.forEach(b => { if (S.sel.includes(b.id)) { b.x += dx; b.y += dy; } });
+  render(); showProps();
+}
+
 // ---- auto-layout (hierarchical tier-based left-to-right or top-to-bottom) ----
 // 'fit' is the only direction offered in the UI right now. 'lr' and 'tb' still
 // work in doHierarchicalLayout() and are reachable from the API, but the dialog
@@ -5100,6 +5203,14 @@ function drawOnePlot(pl, dark) {
 // a 3-phase branch's total P/Q (SPEC §3): reported as one aggregate value,
 // the conventional way 3-phase power is quoted, not per-phase like current.
 function phaseLabel(d) { return d.dc ? 'DC' : (d.phase == null ? '' : PH_LBL[d.phase]); }
+
+// The neutral channel: progress, solve summaries, confirmations. Anything that
+// is a problem goes to showError/showWarn below instead, which is a band that
+// wraps and persists rather than a one-line strip that ellipsises.
+function setStatus(msg) {
+  const el = document.getElementById('stat');
+  if (el) el.textContent = msg;
+}
 
 // ---- notice band (errors and warnings) ----
 // The solver's diagnostics are the best writing in this project: they name the
