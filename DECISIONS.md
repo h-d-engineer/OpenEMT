@@ -3644,3 +3644,65 @@ happily, and earlier a `version: VERSION` replace hit the import line first and
 produced a syntax error, so the process died instead of reporting a mismatch. A
 guard that "fails" because something crashed, or that never fails because the
 break was a no-op, has not been shown to work.
+
+## 2026-08-13: Phase 1 of the usability plan
+
+**Why a UI phase at all.** A measured audit of the shipped build found that the
+content of this app is well ahead of its delivery. The solver errors name the
+offending block and the fix, the science rail is real teaching material, the
+verification tier is honest, and almost none of it reached the user in a usable
+form. The single worst finding was structural rather than cosmetic: at 1280x720
+the first plot began at y=771, so pressing Run produced no visible change
+anywhere on screen. IDEAS.md carries the full findings and the four-phase plan;
+this entry records the decisions Phase 1 made.
+
+**Text tokens are enforced, not chosen.** `--tx3` was #898781 and measured
+3.12:1 on the light body background, which is where `#stat` prints every solver
+error. Nothing in this app reaches 18.66px, so the 3:1 large-text allowance
+never applies and 4.5:1 is the floor everywhere. Rather than pick a better grey
+and trust it, `smoke_test.js` now recomputes every text token against every
+surface it renders on, in both themes, from `src/shell.html`. A contrast
+regression is a build failure, because it is invisible to the eye of whoever
+introduces it.
+
+**The accent had to become three tokens.** Auditing the above turned up
+white-on-accent at 2.86:1 in dark mode, which is the `.on` state of the
+Library/Params/Science/Wide toggles and the zoom chips. No single accent fixes
+it: dark mode wants the accent light enough to read on a near-black ground and
+dark enough to sit under a white label, and those windows do not overlap.
+`--acc` (text and borders) is now separate from `--accf`/`--acct` (the filled
+chip), and dark uses the conventional dark-UI filled chip, a light fill with a
+dark label, while light keeps the dark fill with a white label.
+
+**Canvas height is derived from the viewport.** The flat 460px was set without
+reference to the window and is what pushed the plots below the fold. It now
+derives from the available height, clamped to 280 to 460, so a tall monitor is
+unchanged and a short one trades schematic height for a visible trace. A grip
+height the user dragged always wins; double-click resets to the derived value,
+not to the 460 that caused the problem. `revealPlots()` is a backstop for what
+sizing cannot cover, and it scrolls only when less than 90px of plot is showing
+and only by the minimum distance: yanking the viewport away from someone
+reading the schematic is worse than the problem being solved.
+
+**The data cursor snaps to a stored sample and never interpolates.** The value
+shown is therefore one the solver actually produced and agrees with the CSV
+export to the digits displayed. At a coarse plot step the hairline visibly steps
+between samples, which is honest about the resolution rather than inventing
+points between them. Both the hairline and the readout are DOM overlays, not
+canvas drawing: painting them into the plot would repaint every trace on every
+pointermove, the same cost that made schematic dragging stutter at 147 blocks.
+
+**Errors left the status line.** `#stat` is a one-line strip for progress and
+solve summaries; a modelling diagnostic is a paragraph that has to survive
+intact, so the two cannot share a channel. Twelve sites now route to a wrapping,
+colour-coded band that persists until dismissed or superseded. This became
+urgent mid-phase: compacting the status row made it single-line with an
+ellipsis, which truncated the solver messages outright, and the truncated half
+is the half that tells you what to do.
+
+**A note on smooth scrolling.** `behavior:'smooth'` is compositor-driven, so in
+any context that is not painting it is silently a no-op. That would have made
+`revealPlots()` do nothing in exactly the automated setting used to verify it.
+It now picks an instant scroll under `prefers-reduced-motion`, which addresses
+the accessibility case and removes the silent-failure mode together. Worth
+remembering for any future animation used in a code path that is asserted on.
