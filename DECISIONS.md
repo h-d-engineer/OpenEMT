@@ -3706,3 +3706,63 @@ any context that is not painting it is silently a no-op. That would have made
 It now picks an instant scroll under `prefers-reduced-motion`, which addresses
 the accessibility case and removes the silent-failure mode together. Worth
 remembering for any future animation used in a code path that is asserted on.
+
+## 2026-08-13: Phase 2 of the usability plan, and the landing case
+
+**The landing case is now `examples/showcase.json`.** The programmatic demo
+(source, breaker, line, resistor) solved correctly and plotted a clean
+energization step, which does not show what an EMT solver is for. The showcase
+runs a phase-A-to-ground fault at 55 ms clearing at 85 ms through a 2:1
+transformer with a GFM droop inverter on the secondary: the faulted phase
+collapses to 28 V while the healthy phases swell to 434 V and 369 V, then all
+three recover. That shape is recognisable to a power engineer at a glance, which
+is the job of a landing page. `loadDemo()` stays as the fallback because it
+needs no data beyond its own code, and a landing page that renders nothing is
+the worst outcome available here.
+
+**Notices can be sticky.** A bad `?example=` link complains and then lands on
+the working showcase, so the run that follows would have cleared the message
+explaining the redirect (Phase 1e made a new run clear the band). A navigation
+complaint is not a claim about whether the circuit runs, so it survives until
+dismissed. Ordinary notices still clear on rerun.
+
+**Touch targets are decoupled from drawing.** A terminal is a 5.5 user-unit
+circle and user units shrink with the camera, so on the landing case at 375px it
+was a 2.1 CSS pixel target against the 24px WCAG 2.5.8 minimum. Enlarging the
+drawn circle cannot fix that, because at that zoom a whole block is 23 by 13 CSS
+px and a circle big enough to hit would cover its neighbours. The hit test is
+now a proximity search in screen space with a per-pointer-type radius, which
+also resolves crowded terminals by nearest rather than by SVG stacking order.
+The guard protecting block selection ("nearer the terminal than the block
+centre") is scoped to the inside of the block's own box: applied everywhere it
+capped the usable target at 14px, and measurement showed the guard rather than
+the radius was binding.
+
+**On a phone the rails are one bottom sheet, not three side rails.** They
+covered 55 to 70% of the canvas width and the params rail overflowed the
+viewport outright. Only one can hold the slot, with the priority Library beats
+Params beats Science, each already a labelled toggle.
+
+**Narrow screens opt out of the viewport-derived canvas height.** Reserving
+plot space only pays when a canvas and a plot can share one screen. On a phone
+it drove the canvas to its 280px floor to win 55px of plot, and a bottom sheet
+then took 129px of that. Scrolling to the plots is the normal phone gesture and
+`revealPlots()` already does it on completion.
+
+**Em and en dashes are gone from user-visible text and enforced.** Code comments
+are exempt, so the guard distinguishes string literals from comments rather than
+grepping. 64 sites; most were a clause separator that a colon carries, six
+needed a full stop because the message already opened with "Block #N:", and
+three were glyphs (a "no element set" label, a numeric range, a missing sample)
+that each wanted something different.
+
+**Recurring lesson from this phase: measure the thing, do not read the CSS.**
+Three defects here were invisible to inspection and obvious to a
+`getBoundingClientRect` in the running page: the 14px effective touch target,
+the specificity collision where a `min-height` rule re-declared `display` and
+silently defeated a collapse rule, and `revealPlots()` hitting its target
+against the plot card while leaving only 55px of actual trace. In the same
+spirit, several browser-automation results here were timing artifacts rather
+than defects (an IntersectionObserver callback had not fired, a `scrollTo` used
+a stale page height, a captured DOM node had been replaced by a re-render).
+Confirm the measurement before believing the bug.
