@@ -69,10 +69,24 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
    mid-drag. Setting it on the subtree removes the ambiguity. */
 #cnv *{touch-action:none}
 .cnvwrap:fullscreen{background:var(--sfc1)}
+/* Pseudo-fullscreen, used where the Fullscreen API is unavailable (Safari on
+   iPhone exposes it only for video elements, so the button silently did
+   nothing there). Mirrors the :fullscreen rules below. 100dvh, not 100vh: on
+   mobile Safari 100vh is the tallest possible viewport and stays that tall
+   while the URL bar is showing, so the bottom of the canvas would sit under
+   the browser chrome. */
+.cnvwrap.pseudofs{position:fixed;inset:0;z-index:60;width:100vw;height:100vh;
+  height:100dvh;background:var(--sfc1);border-radius:0;margin:0}
+body.pseudofs-host{overflow:hidden}
 /* !important: the resize grip writes an inline height on #cnv, which would
    otherwise beat this rule and letterbox the fullscreen canvas. */
-.cnvwrap:fullscreen #cnv{height:100%!important;border:none;border-radius:0}
-.cnvwrap:fullscreen .cnvgrip{display:none}
+.cnvwrap:fullscreen #cnv,.cnvwrap.pseudofs #cnv{height:100%!important;border:none;border-radius:0}
+.cnvwrap:fullscreen .cnvgrip,.cnvwrap.pseudofs .cnvgrip{display:none}
+/* The zoom cluster carries the button that gets back out, so in
+   pseudo-fullscreen it must clear the iOS home indicator. */
+.cnvwrap.pseudofs .zoomctl{bottom:calc(10px + env(safe-area-inset-bottom))}
+.cnvwrap.pseudofs .props,.cnvwrap.pseudofs .sci-rail,.cnvwrap.pseudofs .library{
+  top:calc(8px + env(safe-area-inset-top))}
 /* Height grips (schematic canvas + each plot card). Same visual language in
    both places: a short tab straddling the bottom edge, drag to resize,
    double-click to reset. touch-action:none so a touch drag resizes instead of
@@ -358,6 +372,11 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
   /* Stop is disabled except during a run, and a permanently dead 44px button is
      just clutter; the sticky control becomes Stop while running instead. */
   .emt #stopbtn:disabled{display:none}
+  /* The zoom cluster was 28px everywhere. It holds zoom in/out, reset view and
+     the button that gets back OUT of fullscreen, so on touch it needs a real
+     target like everything else. */
+  .zoomctl button{width:44px;height:44px;font-size:20px}
+  .zoomctl{gap:6px}
   .emt .props,.emt .sci-rail,.emt .library{
     left:8px;right:8px;width:auto;top:auto;bottom:8px;
     max-height:46%;padding:.5rem .7rem;border-radius:12px}
