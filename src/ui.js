@@ -406,6 +406,22 @@ function render() {
     h += '</g>';
     if (b.type !== 'gnd' && b.type !== 'probe' && b.type !== 'bus') h += blockLabel(b, d, tx, tx3);
   });
+  // Empty state. Clearing the canvas used to leave a blank rectangle with no
+  // prompt of any kind, at the exact moment a user has decided to build
+  // something of their own. A blank panel in an app reads as a fault, not as an
+  // invitation, so it says what to do instead.
+  if (!S.blocks.length) {
+    const cx = view.x + view.w / 2, cy = view.y + view.h / 2;
+    const fs = Math.max(11, view.w / 52); // scale with the camera so it stays legible at any zoom
+    h += '<text x="' + cx + '" y="' + (cy - fs * 0.9) + '" text-anchor="middle" fill="' + tx3 +
+      '" font-size="' + fs + '" font-family="system-ui,sans-serif" pointer-events="none">Empty canvas.</text>';
+    h += '<text x="' + cx + '" y="' + (cy + fs * 0.5) + '" text-anchor="middle" fill="' + tx3 +
+      '" font-size="' + fs * 0.82 + '" font-family="system-ui,sans-serif" pointer-events="none">' +
+      'Open the Library to place a block, or pick a circuit from Examples.</text>';
+    h += '<text x="' + cx + '" y="' + (cy + fs * 1.8) + '" text-anchor="middle" fill="' + tx3 +
+      '" font-size="' + fs * 0.82 + '" font-family="system-ui,sans-serif" pointer-events="none">' +
+      'Every circuit needs a Ground, and a Probe to plot.</text>';
+  }
   if (drag && drag.type === 'rubber') {
     const rx = Math.min(drag.x0, drag.x1), ry = Math.min(drag.y0, drag.y1);
     const rw = Math.abs(drag.x1 - drag.x0), rh = Math.abs(drag.y1 - drag.y0);
@@ -3983,12 +3999,35 @@ function pruneBlockSignals(id) {
   S.plots.forEach(pl => { if (!pl.auto) pl.sigs = pl.sigs.filter(s => s.key.split(':')[1] !== String(id)); });
 }
 function clearAll() {
+  const hadBlocks = S.blocks.length, hadWires = S.wires.length;
+  const wasConv = S.vconv;
   pushHistory(); touchModel(); resetRunState(); findReset(); // an empty canvas has no results and nothing to find
   S.blocks = []; S.wires = []; S.sel = []; S.wireFrom = null; selWire = null;
+  wirePointer = null; hoverTerm = null;
   S.vconv = 'll'; // a fresh blank circuit defaults to line-to-line entry (SPEC §2); loaded files keep their own convention
   S.plots.forEach(pl => { if (!pl.auto) pl.sigs = []; });
-  setProj('Untitled', false); // fresh canvas — nothing worth marking dirty yet
+  setProj('Untitled', false); // fresh canvas: nothing worth marking dirty yet
   syncVconvUI(); render(); showProps();
+  // Say what happened, on three counts.
+  //
+  // The status line otherwise kept reporting the previous solve ("Solved: 3
+  // nodes ... 2,400 steps") over an empty canvas, which is simply false.
+  //
+  // Undo restores everything (pushHistory ran first), but nothing said so, so
+  // an accidental Clear looked unrecoverable.
+  //
+  // And the convention flip is the one that can silently corrupt a model: this
+  // resets phase entry to line-to-line per SPEC section 2, so clearing and
+  // retyping the same voltages gives a circuit wrong by root three with no
+  // other symptom. That is a named trap in CLAUDE.md and it is reachable by
+  // pressing a button labelled Clear, so it gets said out loud.
+  const bits = ['Cleared the canvas'];
+  if (hadBlocks || hadWires) bits.push(' (' + hadBlocks + ' block' + (hadBlocks === 1 ? '' : 's')
+    + ', ' + hadWires + ' wire' + (hadWires === 1 ? '' : 's') + ')');
+  bits.push('. Ctrl+Z restores it.');
+  if (wasConv !== 'll') bits.push(' Voltage entry reset to line-to-line (LL): a value that meant '
+    + 'phase volts before now means line-to-line, a factor of root 3.');
+  setStatus(bits.join(''));
 }
 // Voltage convention (SPEC §2): 'ph' = params are phase RMS (legacy), 'll' =
 // line-to-line RMS. The solver divides an LL value by sqrt(3) at the boundary
