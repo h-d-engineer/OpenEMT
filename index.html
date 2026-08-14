@@ -8088,9 +8088,20 @@ document.addEventListener('keydown', e => {
   if (e.key.toLowerCase() === 'r' && S.sel.length) { e.preventDefault(); rotateSelected(); return; }
   if ((e.key === 'Delete' || e.key === 'Backspace') && S.sel.length) { e.preventDefault(); delSelected(); return; }
   if ((e.key === 'Delete' || e.key === 'Backspace') && selWire != null) { e.preventDefault(); delSelectedWire(); return; }
+  if (e.key === 'Escape' && cancelWire('Wire cancelled. Nothing was connected.')) return;
   if (e.key === 'Escape' && (S.sel.length || selWire != null)) { S.sel = []; selWire = null; render(); showProps(); }
 });
 
+// Orthogonal wire routing: out horizontally, across at the midpoint, in
+// horizontally. Shared by the real wires and the drag preview so the preview is
+// literally the wire that will be created, not an approximation of it.
+function wirePath(p1, p2) {
+  const mx = (p1[0] + p2[0]) / 2;
+  return 'M' + p1[0] + ' ' + p1[1] + ' L' + mx + ' ' + p1[1] + ' L' + mx + ' ' + p2[1] +
+    ' L' + p2[0] + ' ' + p2[1];
+}
+let hoverTerm = null;   // [blockId, terminalIndex] under the pointer, or null
+let wirePointer = null; // world position of the pointer while wiring
 function render() {
   cnv.setAttribute('viewBox', view.x + ' ' + view.y + ' ' + view.w + ' ' + view.h);
   const sfc = css('--sfc'), bds = css('--bds'), tx = css('--tx'), tx3 = css('--tx3'), acc = css('--acc');
@@ -8105,10 +8116,8 @@ function render() {
     const a = S.blocks.find(b => b.id === w.a[0]), bb = S.blocks.find(b => b.id === w.b[0]);
     if (!a || !bb) return;
     const p1 = termPos(a, w.a[1]), p2 = termPos(bb, w.b[1]);
-    const mx = (p1[0] + p2[0]) / 2;
     const wsel = i === selWire;
-    h += '<path d="M' + p1[0] + ' ' + p1[1] + ' L' + mx + ' ' + p1[1] + ' L' + mx + ' ' + p2[1] +
-      ' L' + p2[0] + ' ' + p2[1] + '" fill="none" stroke="' + (wsel ? acc : bds) +
+    h += '<path d="' + wirePath(p1, p2) + '" fill="none" stroke="' + (wsel ? acc : bds) +
       '" stroke-width="' + (wsel ? 3.2 : 1.6) + '" data-wire="' + i + '" style="cursor:pointer"/>';
     if (wsel) { // end markers: which two terminals this wire actually ties together
       h += '<circle cx="' + p1[0] + '" cy="' + p1[1] + '" r="4" fill="' + acc + '"/>'
@@ -8170,8 +8179,16 @@ function render() {
     h += blockSymbol(b, d, selc, selw, sfc, tx, tx3);
     getTerms(b).forEach((t, ti) => {
       const hot = S.wireFrom && S.wireFrom[0] === b.id && S.wireFrom[1] === ti;
-      h += '<circle cx="' + (b.x + t[0]) + '" cy="' + (b.y + t[1]) + '" r="5.5" fill="' + (hot ? acc : sfc) +
-        '" stroke="' + bds + '" stroke-width="1.2" data-term="' + b.id + ',' + ti + '" style="cursor:crosshair"/>';
+      // Hover feedback. Terminals previously announced themselves only through
+      // a crosshair cursor, which does not exist on touch and is easy to miss
+      // on a mouse, so nothing told you the small circles were targets. The
+      // highlight follows nearestTerminal(), so it also shows WHICH terminal a
+      // click would take when several are close together.
+      const hov = hoverTerm && hoverTerm[0] === b.id && hoverTerm[1] === ti;
+      const r = hot || hov ? 7 : 5.5;
+      h += '<circle cx="' + (b.x + t[0]) + '" cy="' + (b.y + t[1]) + '" r="' + r + '" fill="' + (hot ? acc : sfc) +
+        '" stroke="' + (hot || hov ? acc : bds) + '" stroke-width="' + (hot || hov ? 2.2 : 1.2) +
+        '" data-term="' + b.id + ',' + ti + '" style="cursor:crosshair"/>';
     });
     h += '</g>';
     if (b.type !== 'gnd' && b.type !== 'probe' && b.type !== 'bus') h += blockLabel(b, d, tx, tx3);
@@ -8181,6 +8198,22 @@ function render() {
     const rw = Math.abs(drag.x1 - drag.x0), rh = Math.abs(drag.y1 - drag.y0);
     h += '<rect x="' + rx + '" y="' + ry + '" width="' + rw + '" height="' + rh +
       '" fill="' + acc + '" fill-opacity="0.12" stroke="' + acc + '" stroke-width="1" stroke-dasharray="4 3"/>';
+  }
+  // Wire preview. Clicking the first terminal used to change only that dot's
+  // fill: nothing followed the pointer, so there was no indication you were
+  // mid-wire and no way to see where the wire would land. Drawn with the same
+  // orthogonal routing render() uses for real wires, so the preview is the
+  // wire. Its `d` is rewritten directly on pointermove (see WIRE PREVIEW in the
+  // pointermove handler) rather than by re-rendering the whole schematic.
+  if (S.wireFrom) {
+    const fb = S.blocks.find(x => x.id === S.wireFrom[0]);
+    if (fb) {
+      const p1 = termPos(fb, S.wireFrom[1]);
+      const p2 = wirePointer || p1;
+      h += '<path id="wirepv" d="' + wirePath(p1, p2) + '" fill="none" stroke="' + acc +
+        '" stroke-width="1.8" stroke-dasharray="5 4" opacity="0.85" pointer-events="none"/>';
+      h += '<circle cx="' + p1[0] + '" cy="' + p1[1] + '" r="3" fill="' + acc + '" pointer-events="none"/>';
+    }
   }
   // Palette drag ghost: a translucent preview of the block being dragged from
   // the palette, following the cursor in world coords. Same blockSymbol art as
@@ -8814,10 +8847,16 @@ cnv.addEventListener('pointerdown', e => {
   const near = mod ? null : nearestTerminal(e);
   if (near) {
     const parts = near;
-    if (!S.wireFrom) S.wireFrom = parts;
-    else {
-      if (!(S.wireFrom[0] === parts[0] && S.wireFrom[1] === parts[1])) { pushHistory(); touchModel(); S.wires.push({ a: S.wireFrom, b: parts }); }
-      S.wireFrom = null;
+    if (!S.wireFrom) {
+      S.wireFrom = parts; wirePointer = [pt.x, pt.y];
+      setStatus('Wiring from ' + wireEndLabel(parts) + '. Click another terminal to connect, or press Esc to cancel.');
+    } else {
+      const same = S.wireFrom[0] === parts[0] && S.wireFrom[1] === parts[1];
+      if (!same) {
+        pushHistory(); touchModel(); S.wires.push({ a: S.wireFrom, b: parts });
+        setStatus('Connected ' + wireEndLabel(S.wireFrom) + ' to ' + wireEndLabel(parts) + '.');
+      } else setStatus('Wire cancelled: that is the terminal it started from.');
+      S.wireFrom = null; wirePointer = null;
     }
     render(); return;
   }
@@ -8842,7 +8881,8 @@ cnv.addEventListener('pointerdown', e => {
     capture(e);
     render(); return;
   }
-  S.sel = []; S.wireFrom = null;
+  if (S.wireFrom) { S.wireFrom = null; wirePointer = null; setStatus('Wire cancelled: that was empty canvas, not a terminal.'); }
+  S.sel = [];
   drag = { type: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y };
   capture(e);
   render(); showProps();
@@ -8866,6 +8906,41 @@ cnv.addEventListener('pointermove', e => {
   }
   renderDrag();
 });
+// Hover feedback and the wire preview. Separate listener from the drag one
+// above, which returns early when there is no drag: that is exactly when these
+// two are live.
+//
+// Both are careful about cost, because a full render() is 8.4ms at 147 blocks
+// and this fires on every pointer move (issue #15):
+//   WIRE PREVIEW rewrites the one path's `d` attribute directly. No re-render.
+//   HOVER re-renders only when the hovered terminal actually CHANGES, and even
+//   then through the rAF-coalesced renderDrag().
+cnv.addEventListener('pointermove', e => {
+  if (drag) return; // a drag owns the pointer; the handler above has it
+  const pt = svgPt(e);
+  if (S.wireFrom) {
+    wirePointer = [pt.x, pt.y];
+    const pv = document.getElementById('wirepv');
+    const fb = S.blocks.find(x => x.id === S.wireFrom[0]);
+    if (pv && fb) pv.setAttribute('d', wirePath(termPos(fb, S.wireFrom[1]), wirePointer));
+    else renderDrag(); // preview not in the DOM yet: one render to create it
+  }
+  const near = nearestTerminal(e);
+  const same = (a, b) => (!a && !b) || (a && b && a[0] === b[0] && a[1] === b[1]);
+  if (!same(near, hoverTerm)) { hoverTerm = near; renderDrag(); }
+});
+cnv.addEventListener('pointerleave', () => {
+  if (hoverTerm) { hoverTerm = null; renderDrag(); }
+});
+// Cancel an in-progress wire and say so. It used to reset silently on a click
+// anywhere else, which is indistinguishable from a click that did nothing.
+function cancelWire(reason) {
+  if (!S.wireFrom) return false;
+  S.wireFrom = null; wirePointer = null;
+  setStatus(reason || 'Wire cancelled.');
+  render();
+  return true;
+}
 // A touch drag must not be allowed to turn into a page scroll halfway through.
 // #cnv sets touch-action:none, but that property is not inherited and every SVG
 // child computes to `auto`; iOS Safari does not reliably honour the ancestor's
