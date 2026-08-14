@@ -69,10 +69,24 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
    mid-drag. Setting it on the subtree removes the ambiguity. */
 #cnv *{touch-action:none}
 .cnvwrap:fullscreen{background:var(--sfc1)}
+/* Pseudo-fullscreen, used where the Fullscreen API is unavailable (Safari on
+   iPhone exposes it only for video elements, so the button silently did
+   nothing there). Mirrors the :fullscreen rules below. 100dvh, not 100vh: on
+   mobile Safari 100vh is the tallest possible viewport and stays that tall
+   while the URL bar is showing, so the bottom of the canvas would sit under
+   the browser chrome. */
+.cnvwrap.pseudofs{position:fixed;inset:0;z-index:60;width:100vw;height:100vh;
+  height:100dvh;background:var(--sfc1);border-radius:0;margin:0}
+body.pseudofs-host{overflow:hidden}
 /* !important: the resize grip writes an inline height on #cnv, which would
    otherwise beat this rule and letterbox the fullscreen canvas. */
-.cnvwrap:fullscreen #cnv{height:100%!important;border:none;border-radius:0}
-.cnvwrap:fullscreen .cnvgrip{display:none}
+.cnvwrap:fullscreen #cnv,.cnvwrap.pseudofs #cnv{height:100%!important;border:none;border-radius:0}
+.cnvwrap:fullscreen .cnvgrip,.cnvwrap.pseudofs .cnvgrip{display:none}
+/* The zoom cluster carries the button that gets back out, so in
+   pseudo-fullscreen it must clear the iOS home indicator. */
+.cnvwrap.pseudofs .zoomctl{bottom:calc(10px + env(safe-area-inset-bottom))}
+.cnvwrap.pseudofs .props,.cnvwrap.pseudofs .sci-rail,.cnvwrap.pseudofs .library{
+  top:calc(8px + env(safe-area-inset-top))}
 /* Height grips (schematic canvas + each plot card). Same visual language in
    both places: a short tab straddling the bottom edge, drag to resize,
    double-click to reset. touch-action:none so a touch drag resizes instead of
@@ -358,6 +372,11 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
   /* Stop is disabled except during a run, and a permanently dead 44px button is
      just clutter; the sticky control becomes Stop while running instead. */
   .emt #stopbtn:disabled{display:none}
+  /* The zoom cluster was 28px everywhere. It holds zoom in/out, reset view and
+     the button that gets back OUT of fullscreen, so on touch it needs a real
+     target like everything else. */
+  .zoomctl button{width:44px;height:44px;font-size:20px}
+  .zoomctl{gap:6px}
   .emt .props,.emt .sci-rail,.emt .library{
     left:8px;right:8px;width:auto;top:auto;bottom:8px;
     max-height:46%;padding:.5rem .7rem;border-radius:12px}
@@ -8108,6 +8127,9 @@ document.addEventListener('keydown', e => {
   // the popover contains number inputs: checking after it would make Escape
   // dead exactly when the focus is inside the thing you want to dismiss.
   if (e.key === 'Escape') {
+    // Native fullscreen gets Escape from the browser; the fallback has to
+    // provide it, or the only way out is the button.
+    if (inPseudoFullscreen()) { e.preventDefault(); pseudoFullscreen(false); return; }
     const hp = document.getElementById('help');
     if (hp && hp.style.display === 'flex') { e.preventDefault(); closeHelp(); return; }
     const pop = document.getElementById('simadv');
@@ -8907,6 +8929,7 @@ function nearestTerminal(e) {
 }
 cnv.addEventListener('pointerdown', e => {
   if (e.button !== 0) return; // ignore right/middle-click: don't start drags or wire terminals; the browser context menu is suppressed separately
+  if (activePointers.size >= 2) return; // a pinch owns this gesture, not a drag or a wire
   const t = e.target; const pt = svgPt(e);
   const mod = e.shiftKey || e.ctrlKey;
   if (!t.dataset.wire) selWire = null; // any other click drops the wire selection
@@ -9017,7 +9040,7 @@ function cancelWire(reason) {
 // gesture mid-drag. Two defences: `#cnv *` gets touch-action:none in
 // shell.html, and any touchmove during an active drag is cancelled here. The
 // listener must be non-passive or preventDefault is ignored.
-cnv.addEventListener('touchmove', e => { if (drag) e.preventDefault(); }, { passive: false });
+cnv.addEventListener('touchmove', e => { if (drag || activePointers.size >= 2) e.preventDefault(); }, { passive: false });
 function endCanvasDrag() {
   if (drag && drag.type === 'rubber') {
     const rx0 = Math.min(drag.x0, drag.x1), rx1 = Math.max(drag.x0, drag.x1);
@@ -9056,6 +9079,67 @@ cnv.addEventListener('wheel', e => {
 // a drag don't pop a menu on drop. The app owns all canvas interaction via
 // pointer events; right-click isn't a meaningful action here.
 cnv.addEventListener('contextmenu', e => e.preventDefault());
+
+// ---- pinch to zoom ----
+// #cnv and its whole subtree carry touch-action:none, which is what stops iOS
+// handing a mid-drag gesture to the page (issue #15). The side effect is that
+// the browser's own pinch never reaches the canvas either, and there was no
+// handler of our own, so pinching a phone did nothing at all. Note the default
+// would have been wrong anyway: the browser pinch scales the whole PAGE, and
+// what someone pinching a schematic wants is the camera.
+//
+// Two fingers zoom AND pan together, the standard map gesture: the world point
+// under the midpoint of the two fingers stays put, so you can zoom into a
+// corner without a separate drag. Reuses zoomAt() so the anchoring maths is the
+// same one the mouse wheel uses.
+const activePointers = new Map();
+let pinch = null; // { dist, mid } from the previous move
+function pinchGeometry() {
+  const p = [...activePointers.values()];
+  const dx = p[0].x - p[1].x, dy = p[0].y - p[1].y;
+  return { dist: Math.hypot(dx, dy), mid: { x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2 } };
+}
+cnv.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse') return;
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (activePointers.size === 2) {
+    // A pinch is starting, so whatever the first finger began is not what the
+    // user meant. Abandon it rather than dragging a block across the canvas
+    // while they zoom.
+    drag = null;
+    S.wireFrom = null; wirePointer = null;
+    pinch = pinchGeometry();
+    render();
+  }
+}, true); // capture: settle pinch state before the drag handler reads it
+cnv.addEventListener('pointermove', e => {
+  if (!activePointers.has(e.pointerId)) return;
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (activePointers.size !== 2 || !pinch) return;
+  e.preventDefault();
+  const now = pinchGeometry();
+  const r = cnv.getBoundingClientRect();
+  if (pinch.dist > 0 && now.dist > 0) {
+    // Zoom about the midpoint...
+    const world = { x: view.x + (now.mid.x - r.left) * view.w / r.width,
+                    y: view.y + (now.mid.y - r.top) * view.h / r.height };
+    zoomAt(now.dist / pinch.dist, world);
+    // ...then translate by however far the midpoint itself travelled, which is
+    // the pan half of the gesture.
+    view.x -= (now.mid.x - pinch.mid.x) * view.w / r.width;
+    view.y -= (now.mid.y - pinch.mid.y) * view.h / r.height;
+  }
+  pinch = now;
+  renderDrag();
+}, { passive: false });
+function endPointer(e) {
+  activePointers.delete(e.pointerId);
+  // Dropping to one finger must not resume the abandoned drag, and must not
+  // start a pinch again from a stale distance.
+  if (activePointers.size < 2) pinch = null;
+}
+cnv.addEventListener('pointerup', endPointer);
+cnv.addEventListener('pointercancel', endPointer);
 function svgPt(e) {
   const r = cnv.getBoundingClientRect();
   return { x: view.x + (e.clientX - r.left) * view.w / r.width, y: view.y + (e.clientY - r.top) * view.h / r.height };
@@ -9215,12 +9299,47 @@ function findKey(e) {
   if (e.key === 'ArrowDown') { e.preventDefault(); findGo(findAt + 1, false); return; }
   if (e.key === 'ArrowUp') { e.preventDefault(); findGo(findAt - 1, false); }
 }
+// Fullscreen, with a fallback for the platform that needs it most.
+//
+// Safari on iPhone does not implement the Fullscreen API on ordinary elements
+// at all: requestFullscreen is simply absent (only a video element can go
+// fullscreen there). The button therefore did nothing, silently, on exactly the
+// device where a full-viewport canvas is worth the most. iPadOS and every
+// desktop browser do support it.
+//
+// So: use the real thing when it exists, and otherwise fall back to a
+// fixed-position layer that fills the viewport. The fallback is not a lesser
+// imitation for the user, it just cannot escape the browser chrome.
+function pseudoFullscreen(on) {
+  const wrap = document.querySelector('.cnvwrap');
+  if (!wrap) return;
+  wrap.classList.toggle('pseudofs', on);
+  document.body.classList.toggle('pseudofs-host', on); // stops the page behind it scrolling
+  syncCanvasHeight(); onCanvasResize();
+}
+function inPseudoFullscreen() {
+  const wrap = document.querySelector('.cnvwrap');
+  return !!wrap && wrap.classList.contains('pseudofs');
+}
 function toggleFullscreen() {
   const wrap = document.querySelector('.cnvwrap');
-  // catch: rejects when the embedding context denies fullscreen (e.g. an
-  // iframe without allowfullscreen) — nothing to do about it, don't throw
-  if (!document.fullscreenElement) { if (wrap.requestFullscreen) wrap.requestFullscreen().catch(() => {}); }
-  else document.exitFullscreen();
+  if (!wrap) return;
+  if (inPseudoFullscreen()) { pseudoFullscreen(false); return; }
+  const native = document.fullscreenElement || document.webkitFullscreenElement;
+  if (native) {
+    if (document.exitFullscreen) document.exitFullscreen();
+    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    return;
+  }
+  const req = wrap.requestFullscreen || wrap.webkitRequestFullscreen;
+  if (!req) { pseudoFullscreen(true); return; } // iPhone Safari lands here
+  // catch: rejects when the embedding context denies fullscreen (an iframe
+  // without allowfullscreen, or a browser that exposes the method but refuses
+  // the request). Falling back beats doing nothing at all.
+  try {
+    const r = req.call(wrap);
+    if (r && typeof r.catch === 'function') r.catch(() => pseudoFullscreen(true));
+  } catch (err) { pseudoFullscreen(true); }
 }
 // entering/leaving fullscreen (or resizing the window) changes the element's
 // aspect — re-derive view.h around the same center so the world doesn't shift
@@ -12028,7 +12147,8 @@ const CANVAS_HELP = [
   ['Wire two blocks', 'Click a terminal, then click another. A dashed preview follows the pointer; Esc cancels.'],
   ['Edit a block', 'Click it. Parameters appear on the left, the physics and equations on the right.'],
   ['Move things', 'Drag a block. Drag empty canvas to pan. Shift or Ctrl drag to rubber-band select.'],
-  ['Zoom', 'Scroll, or use the +/- buttons at the bottom right of the canvas.'],
+  ['Zoom', 'Scroll, pinch with two fingers, or use the +/- buttons at the bottom right.'],
+  ['Fullscreen', 'The last button in the zoom cluster. Press it again or Esc to leave.'],
   ['Read a value', 'Hover a plot for a crosshair and the value of every signal at that instant.'],
   ['Resize', 'Drag the tab under the canvas or under any plot. Double-click it to reset.'],
   ['Every circuit needs', 'A Ground block, and a Probe on any node you want to plot.']
