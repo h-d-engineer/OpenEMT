@@ -37,9 +37,9 @@ body{margin:0;padding:16px;background:#f0efe9;display:flex;justify-content:cente
    Library/Params/Science/Wide toggles and the zoom-mode chips shipped. Dark
    therefore uses the conventional dark-UI filled chip (light fill, dark label)
    while light keeps the dark fill with a white label. */
-.emt{--sfc:#ffffff;--sfc1:#f5f4ef;--bd:rgba(0,0,0,.18);--bds:rgba(0,0,0,.45);--tx:#1a1a18;--tx2:#52514e;--tx3:#6b6963;--acc:#2570cc;--accf:#2570cc;--acct:#ffffff;
+.emt{--sfc:#ffffff;--sfc1:#f5f4ef;--bd:rgba(0,0,0,.18);--bds:rgba(0,0,0,.45);--tx:#1a1a18;--tx2:#52514e;--tx3:#6b6963;--acc:#2570cc;--accf:#2570cc;--acct:#ffffff;--err:#a8301b;--errbg:#fbeeeb;--warn:#7f5c0c;--warnbg:#fbf4e3;
 max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-size:13px;color:var(--tx);position:relative}
-@media(prefers-color-scheme:dark){.emt{--sfc:#2e2e2b;--sfc1:#232320;--bd:rgba(255,255,255,.22);--bds:rgba(255,255,255,.55);--tx:#eceae4;--tx2:#c3c2b7;--tx3:#9b9993;--acc:#5c9ce6;--accf:#6fa8e4;--acct:#1d1d1b}}
+@media(prefers-color-scheme:dark){.emt{--sfc:#2e2e2b;--sfc1:#232320;--bd:rgba(255,255,255,.22);--bds:rgba(255,255,255,.55);--tx:#eceae4;--tx2:#c3c2b7;--tx3:#9b9993;--acc:#5c9ce6;--accf:#6fa8e4;--acct:#1d1d1b;--err:#ef8570;--errbg:#3a2622;--warn:#e0ac42;--warnbg:#332b1a}}
 /* The brand sits in the status row, so it is sized to that row (13px) rather
    than as a page heading. Still an h1: it is the document's title for
    assistive tech and search, only its presentation changed. */
@@ -162,6 +162,24 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
    pushing the find box off the row. */
 .emt .statusrow{display:flex;gap:8px;align-items:center;margin-bottom:6px}
 .emt .statusline{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Notice band: errors and warnings, separated from #stat.
+   #stat is a one-line ellipsised strip carrying progress ("Running... 40%") and
+   solve summaries. Routing solver diagnostics through it meant the best writing
+   in this app ("Distance relay #7 needs a 3-phase AC node...") competed with a
+   percentage counter for the same 12px of grey, and after the status row was
+   made single-line it was being truncated outright. This band wraps, holds the
+   full text, persists until dismissed or superseded, and is colour-coded. */
+.emt .notice{display:none;margin:0 0 8px;padding:8px 12px;border-radius:9px;font-size:12.5px;
+  line-height:1.5;border:1px solid;gap:12px;align-items:flex-start}
+.emt .notice.on{display:flex}
+.emt .notice.err{background:var(--errbg);border-color:var(--err);color:var(--err)}
+.emt .notice.warn{background:var(--warnbg);border-color:var(--warn);color:var(--warn)}
+.emt .notice-t{flex:1;min-width:0}
+.emt .notice-l{font-weight:700;text-transform:uppercase;letter-spacing:.05em;font-size:10px;
+  display:block;margin-bottom:2px;opacity:.85}
+.emt .notice button{flex:none;font-size:11px;padding:2px 9px;background:transparent;color:inherit;
+  border:1px solid currentColor;border-radius:6px;cursor:pointer;opacity:.75}
+.emt .notice button:hover{opacity:1}
 /* Numerics popover, opened by the gear in the Sim cluster. Same floating-panel
    language as .picker and .layoutdialog. */
 .emt .simadv{position:absolute;z-index:22;background:var(--sfc);border:1px solid var(--bds);
@@ -324,6 +342,10 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
 </div>
 <p class="sub" id="about">The electromagnetic transient simulator built for AI agents. Trapezoidal nodal solver with steady-state power flow and machine initialization, addressable from this canvas, a CLI, or an MCP server. Beta: provided as is, results are not certified for engineering decisions.
   <button class="aboutx" onclick="toggleAbout()" title="Hide this (the &#9432; button brings it back)">Dismiss</button></p>
+<div class="notice" id="notice" role="status" aria-live="polite">
+  <span class="notice-t"><span class="notice-l" id="noticelab"></span><span id="noticemsg"></span></span>
+  <button onclick="clearNotice()" title="Dismiss">Dismiss</button>
+</div>
 
 <div class="pal">
   <div class="tcl"><span class="tcl-l">Blocks</span>

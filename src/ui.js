@@ -3987,9 +3987,9 @@ function loadCircuit(file) {
   rd.onload = () => {
     const stat = document.getElementById('stat');
     let d;
-    try { d = JSON.parse(rd.result); } catch { stat.textContent = 'Load failed: not valid JSON.'; return; }
+    try { d = JSON.parse(rd.result); } catch { showError('Load failed: that file is not valid JSON.'); return; }
     const res = applyCircuit(d, file.name);
-    if (res.err) { stat.textContent = 'Load failed: ' + res.err; return; }
+    if (res.err) { showError('Load failed: ' + res.err); return; }
     stat.textContent = 'Loaded ' + file.name + ': ' + S.blocks.length + ' blocks, ' + S.wires.length + ' wires.'
       + (d.sim ? ' Run settings from file: ' + document.getElementById('duration').value + ' ms at '
         + document.getElementById('dtus').value + ' µs.' : '')
@@ -4014,9 +4014,9 @@ function loadExampleByName(name) {
   const stat = document.getElementById('stat');
   if (!name) return false;
   const d = EXAMPLES[name];
-  if (!d) { stat.textContent = 'No such example: ' + name + '.'; return false; }
+  if (!d) { showError('No such example: ' + name + '.'); return false; }
   const res = applyCircuit(JSON.parse(JSON.stringify(d)), name + '.json');
-  if (res.err) { stat.textContent = 'Could not open ' + name + ': ' + res.err; return false; }
+  if (res.err) { showError('Could not open ' + name + ': ' + res.err); return false; }
   loadedExample = name; // after applyCircuit: its touchModel() clears this
   fitView();
   render();
@@ -4037,8 +4037,8 @@ function loadExampleByName(name) {
 function copyCaseLink() {
   const stat = document.getElementById('stat');
   if (!loadedExample) {
-    stat.textContent = 'Only the shipped examples have a shareable link, and this circuit is not one '
-      + '(or has been edited since it was opened). Use Save to send the .json file instead.';
+    showWarn('Only the shipped examples have a shareable link, and this circuit is not one '
+      + '(or has been edited since it was opened). Use Save to send the .json file instead.');
     return;
   }
   const pf = !!(document.getElementById('pfinit') || {}).checked;
@@ -4100,9 +4100,9 @@ function importCircuit(file) {
   rd.onload = () => {
     const stat = document.getElementById('stat');
     const res = importCase(rd.result, file.name);
-    if (res.err) { stat.textContent = 'Import failed: ' + res.err; return; }
+    if (res.err) { showError('Import failed: ' + res.err); return; }
     const ap = applyCircuit(res.circuit, file.name);
-    if (ap.err) { stat.textContent = 'Import failed: ' + ap.err; return; }
+    if (ap.err) { showError('Import failed: ' + ap.err); return; }
     // Imported circuits have only a coarse grid layout; tidy them like the user
     // would with the Layout dialog, then frame the whole network.
     try { doHierarchicalLayout('fit'); } catch (e) { fitView(); }
@@ -4968,6 +4968,37 @@ function drawOnePlot(pl, dark) {
 // the conventional way 3-phase power is quoted, not per-phase like current.
 function phaseLabel(d) { return d.dc ? 'DC' : (d.phase == null ? '' : PH_LBL[d.phase]); }
 
+// ---- notice band (errors and warnings) ----
+// The solver's diagnostics are the best writing in this project: they name the
+// offending block by id, explain the physical cause, and give the fix. They
+// used to be assigned to #stat, the same one-line strip that carries
+// "Running... 40%" and the solve summary, so a modelling mistake arrived in the
+// same 12px of grey as routine progress and, once that line became single-line,
+// was truncated with an ellipsis.
+//
+// showError/showWarn put the FULL text in a wrapping, colour-coded band that
+// stays until it is dismissed or replaced. Never truncate here: the second half
+// of "...set Fov and Fuv to 0, or place this relay on a full 3-phase node" is
+// the half that tells you what to do.
+function setNotice(msg, level) {
+  const box = document.getElementById('notice');
+  const lab = document.getElementById('noticelab');
+  const txt = document.getElementById('noticemsg');
+  if (!box || !txt) return;
+  txt.textContent = msg;
+  if (lab) lab.textContent = level === 'warn' ? 'Warning' : 'Cannot run this circuit';
+  box.className = 'notice on ' + (level === 'warn' ? 'warn' : 'err');
+  syncCanvasHeight(); onCanvasResize(); // the band changes the canvas top
+}
+function showError(msg) { setNotice(msg, 'err'); }
+function showWarn(msg) { setNotice(msg, 'warn'); }
+function clearNotice() {
+  const box = document.getElementById('notice');
+  if (!box || !box.classList.contains('on')) return;
+  box.className = 'notice';
+  syncCanvasHeight(); onCanvasResize();
+}
+
 // ---- data cursor ----
 // "What is the voltage at t = 34 ms" is the question a transient simulator
 // exists to answer, and until this the only way to get it was to export CSV and
@@ -5186,9 +5217,9 @@ function exportable(id) {
   const c = document.getElementById('pcv-' + id);
   const stat = document.getElementById('stat');
   if (!pl || !c) return null;
-  if (!live || !live.t.length || !c._geom) { if (stat) stat.textContent = 'Nothing to export yet — run the simulation first.'; return null; }
+  if (!live || !live.t.length || !c._geom) { showWarn('Nothing to export yet: run the simulation first.'); return null; }
   const series = plotSeries(pl);
-  if (!series.length) { if (stat) stat.textContent = 'Plot “' + pl.title + '” has no signals to export — pick some with “Signals”.'; return null; }
+  if (!series.length) { showWarn('Plot “' + pl.title + '” has no signals to export: pick some with “Signals”.'); return null; }
   return { pl, c, series };
 }
 // PNG: the on-screen canvas composited onto an opaque themed background with a
@@ -5371,8 +5402,9 @@ function setRunning(running) {
 // from PF" is checked (see runEMTLive).
 function solvePF() {
   const stat = document.getElementById('stat');
+  clearNotice(); // a new attempt supersedes the previous complaint
   const r = solvePowerFlow();
-  if (r.err) { stat.textContent = 'Power flow: ' + r.err; return; }
+  if (r.err) { showError('Power flow: ' + r.err); return; }
   window.pfResult = r; window.pfShow = true;
   // Summarize busBlocks, NOT r.buses: every pu in r.buses is divided by the
   // single slack-derived Vnom, so on a multi-voltage circuit (which is every
@@ -5395,6 +5427,7 @@ function solvePF() {
 
 function runEMTLive() {
   if (typeof Worker === 'undefined') { runEMT(); return; } // no Worker support: synchronous fallback
+  clearNotice(); // a new attempt supersedes the previous complaint
 
   const stat = document.getElementById('stat');
   const nph = +document.getElementById('phmode').value;
@@ -5446,10 +5479,15 @@ function runEMTLive() {
       stat.textContent = m.stat; setRunning(false);
       revealPlots();
     } else if (m.type === 'error') {
-      stat.textContent = m.message; setRunning(false);
+      // The status line is left mid-progress ("Running… 40%") when the worker
+      // reports a failure, so it has to be retired explicitly. Leaving it is
+      // worse than blank: it says the run is still going while the band below
+      // says it cannot run at all.
+      showError(m.message); stat.textContent = 'Run stopped: see the message above.';
+      setRunning(false);
     }
   };
-  w.onerror = ev => { stat.textContent = 'Worker error: ' + ev.message; setRunning(false); };
+  w.onerror = ev => { showError('Worker error: ' + ev.message); setRunning(false); };
 
 
   w.postMessage({ blocks: S.blocks, wires: S.wires, vconv: S.vconv, nph, Tms, dtUs, plotUs });

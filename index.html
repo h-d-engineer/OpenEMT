@@ -37,9 +37,9 @@ body{margin:0;padding:16px;background:#f0efe9;display:flex;justify-content:cente
    Library/Params/Science/Wide toggles and the zoom-mode chips shipped. Dark
    therefore uses the conventional dark-UI filled chip (light fill, dark label)
    while light keeps the dark fill with a white label. */
-.emt{--sfc:#ffffff;--sfc1:#f5f4ef;--bd:rgba(0,0,0,.18);--bds:rgba(0,0,0,.45);--tx:#1a1a18;--tx2:#52514e;--tx3:#6b6963;--acc:#2570cc;--accf:#2570cc;--acct:#ffffff;
+.emt{--sfc:#ffffff;--sfc1:#f5f4ef;--bd:rgba(0,0,0,.18);--bds:rgba(0,0,0,.45);--tx:#1a1a18;--tx2:#52514e;--tx3:#6b6963;--acc:#2570cc;--accf:#2570cc;--acct:#ffffff;--err:#a8301b;--errbg:#fbeeeb;--warn:#7f5c0c;--warnbg:#fbf4e3;
 max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-size:13px;color:var(--tx);position:relative}
-@media(prefers-color-scheme:dark){.emt{--sfc:#2e2e2b;--sfc1:#232320;--bd:rgba(255,255,255,.22);--bds:rgba(255,255,255,.55);--tx:#eceae4;--tx2:#c3c2b7;--tx3:#9b9993;--acc:#5c9ce6;--accf:#6fa8e4;--acct:#1d1d1b}}
+@media(prefers-color-scheme:dark){.emt{--sfc:#2e2e2b;--sfc1:#232320;--bd:rgba(255,255,255,.22);--bds:rgba(255,255,255,.55);--tx:#eceae4;--tx2:#c3c2b7;--tx3:#9b9993;--acc:#5c9ce6;--accf:#6fa8e4;--acct:#1d1d1b;--err:#ef8570;--errbg:#3a2622;--warn:#e0ac42;--warnbg:#332b1a}}
 /* The brand sits in the status row, so it is sized to that row (13px) rather
    than as a page heading. Still an h1: it is the document's title for
    assistive tech and search, only its presentation changed. */
@@ -162,6 +162,24 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
    pushing the find box off the row. */
 .emt .statusrow{display:flex;gap:8px;align-items:center;margin-bottom:6px}
 .emt .statusline{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Notice band: errors and warnings, separated from #stat.
+   #stat is a one-line ellipsised strip carrying progress ("Running... 40%") and
+   solve summaries. Routing solver diagnostics through it meant the best writing
+   in this app ("Distance relay #7 needs a 3-phase AC node...") competed with a
+   percentage counter for the same 12px of grey, and after the status row was
+   made single-line it was being truncated outright. This band wraps, holds the
+   full text, persists until dismissed or superseded, and is colour-coded. */
+.emt .notice{display:none;margin:0 0 8px;padding:8px 12px;border-radius:9px;font-size:12.5px;
+  line-height:1.5;border:1px solid;gap:12px;align-items:flex-start}
+.emt .notice.on{display:flex}
+.emt .notice.err{background:var(--errbg);border-color:var(--err);color:var(--err)}
+.emt .notice.warn{background:var(--warnbg);border-color:var(--warn);color:var(--warn)}
+.emt .notice-t{flex:1;min-width:0}
+.emt .notice-l{font-weight:700;text-transform:uppercase;letter-spacing:.05em;font-size:10px;
+  display:block;margin-bottom:2px;opacity:.85}
+.emt .notice button{flex:none;font-size:11px;padding:2px 9px;background:transparent;color:inherit;
+  border:1px solid currentColor;border-radius:6px;cursor:pointer;opacity:.75}
+.emt .notice button:hover{opacity:1}
 /* Numerics popover, opened by the gear in the Sim cluster. Same floating-panel
    language as .picker and .layoutdialog. */
 .emt .simadv{position:absolute;z-index:22;background:var(--sfc);border:1px solid var(--bds);
@@ -324,6 +342,10 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
 </div>
 <p class="sub" id="about">The electromagnetic transient simulator built for AI agents. Trapezoidal nodal solver with steady-state power flow and machine initialization, addressable from this canvas, a CLI, or an MCP server. Beta: provided as is, results are not certified for engineering decisions.
   <button class="aboutx" onclick="toggleAbout()" title="Hide this (the &#9432; button brings it back)">Dismiss</button></p>
+<div class="notice" id="notice" role="status" aria-live="polite">
+  <span class="notice-t"><span class="notice-l" id="noticelab"></span><span id="noticemsg"></span></span>
+  <button onclick="clearNotice()" title="Dismiss">Dismiss</button>
+</div>
 
 <div class="pal">
   <div class="tcl"><span class="tcl-l">Blocks</span>
@@ -11682,9 +11704,9 @@ function loadCircuit(file) {
   rd.onload = () => {
     const stat = document.getElementById('stat');
     let d;
-    try { d = JSON.parse(rd.result); } catch { stat.textContent = 'Load failed: not valid JSON.'; return; }
+    try { d = JSON.parse(rd.result); } catch { showError('Load failed: that file is not valid JSON.'); return; }
     const res = applyCircuit(d, file.name);
-    if (res.err) { stat.textContent = 'Load failed: ' + res.err; return; }
+    if (res.err) { showError('Load failed: ' + res.err); return; }
     stat.textContent = 'Loaded ' + file.name + ': ' + S.blocks.length + ' blocks, ' + S.wires.length + ' wires.'
       + (d.sim ? ' Run settings from file: ' + document.getElementById('duration').value + ' ms at '
         + document.getElementById('dtus').value + ' µs.' : '')
@@ -11709,9 +11731,9 @@ function loadExampleByName(name) {
   const stat = document.getElementById('stat');
   if (!name) return false;
   const d = EXAMPLES[name];
-  if (!d) { stat.textContent = 'No such example: ' + name + '.'; return false; }
+  if (!d) { showError('No such example: ' + name + '.'); return false; }
   const res = applyCircuit(JSON.parse(JSON.stringify(d)), name + '.json');
-  if (res.err) { stat.textContent = 'Could not open ' + name + ': ' + res.err; return false; }
+  if (res.err) { showError('Could not open ' + name + ': ' + res.err); return false; }
   loadedExample = name; // after applyCircuit: its touchModel() clears this
   fitView();
   render();
@@ -11732,8 +11754,8 @@ function loadExampleByName(name) {
 function copyCaseLink() {
   const stat = document.getElementById('stat');
   if (!loadedExample) {
-    stat.textContent = 'Only the shipped examples have a shareable link, and this circuit is not one '
-      + '(or has been edited since it was opened). Use Save to send the .json file instead.';
+    showWarn('Only the shipped examples have a shareable link, and this circuit is not one '
+      + '(or has been edited since it was opened). Use Save to send the .json file instead.');
     return;
   }
   const pf = !!(document.getElementById('pfinit') || {}).checked;
@@ -11795,9 +11817,9 @@ function importCircuit(file) {
   rd.onload = () => {
     const stat = document.getElementById('stat');
     const res = importCase(rd.result, file.name);
-    if (res.err) { stat.textContent = 'Import failed: ' + res.err; return; }
+    if (res.err) { showError('Import failed: ' + res.err); return; }
     const ap = applyCircuit(res.circuit, file.name);
-    if (ap.err) { stat.textContent = 'Import failed: ' + ap.err; return; }
+    if (ap.err) { showError('Import failed: ' + ap.err); return; }
     // Imported circuits have only a coarse grid layout; tidy them like the user
     // would with the Layout dialog, then frame the whole network.
     try { doHierarchicalLayout('fit'); } catch (e) { fitView(); }
@@ -12663,6 +12685,37 @@ function drawOnePlot(pl, dark) {
 // the conventional way 3-phase power is quoted, not per-phase like current.
 function phaseLabel(d) { return d.dc ? 'DC' : (d.phase == null ? '' : PH_LBL[d.phase]); }
 
+// ---- notice band (errors and warnings) ----
+// The solver's diagnostics are the best writing in this project: they name the
+// offending block by id, explain the physical cause, and give the fix. They
+// used to be assigned to #stat, the same one-line strip that carries
+// "Running... 40%" and the solve summary, so a modelling mistake arrived in the
+// same 12px of grey as routine progress and, once that line became single-line,
+// was truncated with an ellipsis.
+//
+// showError/showWarn put the FULL text in a wrapping, colour-coded band that
+// stays until it is dismissed or replaced. Never truncate here: the second half
+// of "...set Fov and Fuv to 0, or place this relay on a full 3-phase node" is
+// the half that tells you what to do.
+function setNotice(msg, level) {
+  const box = document.getElementById('notice');
+  const lab = document.getElementById('noticelab');
+  const txt = document.getElementById('noticemsg');
+  if (!box || !txt) return;
+  txt.textContent = msg;
+  if (lab) lab.textContent = level === 'warn' ? 'Warning' : 'Cannot run this circuit';
+  box.className = 'notice on ' + (level === 'warn' ? 'warn' : 'err');
+  syncCanvasHeight(); onCanvasResize(); // the band changes the canvas top
+}
+function showError(msg) { setNotice(msg, 'err'); }
+function showWarn(msg) { setNotice(msg, 'warn'); }
+function clearNotice() {
+  const box = document.getElementById('notice');
+  if (!box || !box.classList.contains('on')) return;
+  box.className = 'notice';
+  syncCanvasHeight(); onCanvasResize();
+}
+
 // ---- data cursor ----
 // "What is the voltage at t = 34 ms" is the question a transient simulator
 // exists to answer, and until this the only way to get it was to export CSV and
@@ -12881,9 +12934,9 @@ function exportable(id) {
   const c = document.getElementById('pcv-' + id);
   const stat = document.getElementById('stat');
   if (!pl || !c) return null;
-  if (!live || !live.t.length || !c._geom) { if (stat) stat.textContent = 'Nothing to export yet — run the simulation first.'; return null; }
+  if (!live || !live.t.length || !c._geom) { showWarn('Nothing to export yet: run the simulation first.'); return null; }
   const series = plotSeries(pl);
-  if (!series.length) { if (stat) stat.textContent = 'Plot “' + pl.title + '” has no signals to export — pick some with “Signals”.'; return null; }
+  if (!series.length) { showWarn('Plot “' + pl.title + '” has no signals to export: pick some with “Signals”.'); return null; }
   return { pl, c, series };
 }
 // PNG: the on-screen canvas composited onto an opaque themed background with a
@@ -13066,8 +13119,9 @@ function setRunning(running) {
 // from PF" is checked (see runEMTLive).
 function solvePF() {
   const stat = document.getElementById('stat');
+  clearNotice(); // a new attempt supersedes the previous complaint
   const r = solvePowerFlow();
-  if (r.err) { stat.textContent = 'Power flow: ' + r.err; return; }
+  if (r.err) { showError('Power flow: ' + r.err); return; }
   window.pfResult = r; window.pfShow = true;
   // Summarize busBlocks, NOT r.buses: every pu in r.buses is divided by the
   // single slack-derived Vnom, so on a multi-voltage circuit (which is every
@@ -13090,6 +13144,7 @@ function solvePF() {
 
 function runEMTLive() {
   if (typeof Worker === 'undefined') { runEMT(); return; } // no Worker support: synchronous fallback
+  clearNotice(); // a new attempt supersedes the previous complaint
 
   const stat = document.getElementById('stat');
   const nph = +document.getElementById('phmode').value;
@@ -13141,10 +13196,15 @@ function runEMTLive() {
       stat.textContent = m.stat; setRunning(false);
       revealPlots();
     } else if (m.type === 'error') {
-      stat.textContent = m.message; setRunning(false);
+      // The status line is left mid-progress ("Running… 40%") when the worker
+      // reports a failure, so it has to be retired explicitly. Leaving it is
+      // worse than blank: it says the run is still going while the band below
+      // says it cannot run at all.
+      showError(m.message); stat.textContent = 'Run stopped: see the message above.';
+      setRunning(false);
     }
   };
-  w.onerror = ev => { stat.textContent = 'Worker error: ' + ev.message; setRunning(false); };
+  w.onerror = ev => { showError('Worker error: ' + ev.message); setRunning(false); };
 
 
   w.postMessage({ blocks: S.blocks, wires: S.wires, vconv: S.vconv, nph, Tms, dtUs, plotUs });

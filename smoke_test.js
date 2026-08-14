@@ -5052,6 +5052,17 @@ console.log('gfm status:', els_stubs.stat.textContent);
   if(rl<4.5) fails.push(theme+' --acct on --accf (filled .on label): '+rl.toFixed(2)+':1');
   const rb=cr(t('accf'),surfaces.sfc);
   if(rb<3) fails.push(theme+' --accf against --sfc (chip boundary): '+rb.toFixed(2)+':1');
+  // The notice band: error and warning text on their own tinted grounds. This
+  // is the one place a user reads a full paragraph explaining what is wrong
+  // with their circuit, so it gets checked like everything else.
+  [['err','errbg'],['warn','warnbg']].forEach(([fg,bg])=>{
+   const r=cr(t(fg),t(bg));
+   if(r<4.5) fails.push(theme+' --'+fg+' on --'+bg+' (notice band): '+r.toFixed(2)+':1');
+   // The band's border is currentColor, so the same token also has to separate
+   // the band from the page behind it.
+   const rr2=cr(t(fg),surfaces.body);
+   if(rr2<3) fails.push(theme+' --'+fg+' border against the page: '+rr2.toFixed(2)+':1');
+  });
  });
  if(fails.length) fails.forEach(f=>console.log('  contrast: '+f));
  record('docs','every text token clears WCAG AA 4.5:1 on every surface, both themes', !fails.length);
