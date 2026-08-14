@@ -408,7 +408,12 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
 </div>
 
 <div class="st2 plotstoolbar" style="margin-top:8px">
-  <span>Plots — solid A, dashed B, dotted C. Drag a plot to zoom (Shift+drag to pan, scroll to zoom, double-click to clear that plot's vertical zoom); drag the tab under a plot to resize it; “Signals” picks what each plot shows and its axis.</span>
+  <!-- One line, not two. The old sentence spelled out every zoom gesture and
+       wrapped to a second row directly above the plots, costing ~20px at the
+       exact place the fold falls on a 720px laptop. The gestures it described
+       are on the tooltips of the controls to the right of it, which is where
+       someone looks for them. -->
+  <span class="plotshint" title="Drag a plot to zoom; Shift+drag to pan; scroll to zoom; double-click clears that plot's vertical zoom. Drag the tab under a plot to resize it.">Plots: solid A, dashed B, dotted C. Drag to zoom, “Signals” picks what each plot shows.</span>
   <span class="flexpad"></span>
   <span id="zoominfo" class="zoominfo"></span>
   <span class="zmode" id="zoommode" title="What a drag/scroll on a plot zooms. Time (X) is shared by every plot; vertical (Y) is per plot.">

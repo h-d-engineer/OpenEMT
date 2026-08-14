@@ -1223,7 +1223,7 @@ function onCanvasResize() {
   render();
 }
 document.addEventListener('fullscreenchange', onCanvasResize);
-window.addEventListener('resize', () => { onCanvasResize(); drawAllPlots(); });
+window.addEventListener('resize', () => { syncCanvasHeight(); onCanvasResize(); drawAllPlots(); });
 
 // ---- canvas height: drag the grip on the bottom edge (SPEC §3). Wide/
 // fullscreen only ever changed the WIDTH, so on a tall screen the schematic
@@ -1235,9 +1235,34 @@ window.addEventListener('resize', () => { onCanvasResize(); drawAllPlots(); });
 // the other layout preferences; double-click clears it so the stylesheet's
 // height (which is responsive: 460px, 380px under 760px wide) takes over again.
 const CNV_H_MIN = 200, CNV_H_MAX = 2000;
+// Space the plots need below the canvas before any waveform is visible: the
+// plots toolbar, one plot card's header, and enough plot canvas to read a
+// trace, plus the margins between them. Used to size the canvas so that
+// pressing Run changes something the user can actually see.
+const PLOT_RESERVE = 210;
+// Auto canvas height, used only when the user has not dragged the grip.
+//
+// The stylesheet's flat 460px was set without reference to the window, and on a
+// 1280x720 laptop it put the first plot at y=771: the whole output of the tool
+// lived below the fold, so a run finished with no visible change anywhere on
+// screen. Deriving the height from the viewport instead keeps the generous
+// canvas on a tall monitor (it clamps back to 460) and trades some schematic
+// height for a visible waveform on a short one. A persisted grip height always
+// wins: an explicit choice outranks this.
+function autoCanvasHeight() {
+  const wrap = document.querySelector('.cnvwrap');
+  if (!wrap || !window.innerHeight) return null;
+  const top = wrap.getBoundingClientRect().top + window.scrollY;
+  const h = Math.round(window.innerHeight - top - PLOT_RESERVE);
+  // Floor at 280 rather than CNV_H_MIN: 200px is a legitimate thing to drag
+  // down to by hand, but it is too cramped to hand someone on arrival.
+  return Math.max(280, Math.min(460, h));
+}
 function syncCanvasHeight() {
   const h = +localStorage.getItem('emt_cnvh');
-  cnv.style.height = (h >= CNV_H_MIN && h <= CNV_H_MAX) ? h + 'px' : '';
+  if (h >= CNV_H_MIN && h <= CNV_H_MAX) { cnv.style.height = h + 'px'; return; }
+  const auto = autoCanvasHeight();
+  cnv.style.height = auto ? auto + 'px' : '';
 }
 function bindCanvasResizer() {
   const grip = document.getElementById('cnvgrip');
@@ -1263,9 +1288,13 @@ function bindCanvasResizer() {
   };
   grip.addEventListener('pointerup', end);
   grip.addEventListener('pointercancel', end);
+  // Double-click clears the persisted height and hands the canvas back to
+  // autoCanvasHeight(), which is what "reset" now means. Clearing the inline
+  // style instead would restore the stylesheet's flat 460px, i.e. the very
+  // value that put the plots below the fold.
   grip.addEventListener('dblclick', () => {
     localStorage.removeItem('emt_cnvh');
-    cnv.style.height = '';
+    syncCanvasHeight();
     onCanvasResize();
   });
 }
@@ -3819,7 +3848,8 @@ function toggleAbout() {
   const hidden = localStorage.getItem('emt_about') !== '1'; // flip
   localStorage.setItem('emt_about', hidden ? '1' : '0');
   syncAboutUI();
-  onCanvasResize(); // the row appearing/disappearing changes the canvas aspect
+  syncCanvasHeight(); // the row appearing/disappearing moves the canvas top
+  onCanvasResize(); // ...and therefore changes its aspect
 }
 // Numerics popover (time step, plot step, flow arrows), anchored under its gear
 // button. Not persisted: it is a transient panel, not a layout preference.
@@ -5343,11 +5373,13 @@ function runEMTLive() {
       computeFlowDirs(); render();
       updatePlotStepInfo();
       stat.textContent = m.stat; setRunning(false);
+      revealPlots();
     } else if (m.type === 'error') {
       stat.textContent = m.message; setRunning(false);
     }
   };
   w.onerror = ev => { stat.textContent = 'Worker error: ' + ev.message; setRunning(false); };
+
 
   w.postMessage({ blocks: S.blocks, wires: S.wires, vconv: S.vconv, nph, Tms, dtUs, plotUs });
 }
@@ -5355,6 +5387,35 @@ function stopSim() {
   if (simWorker) { simWorker.terminate(); simWorker = null; }
   setRunning(false);
   document.getElementById('stat').textContent = 'Stopped.';
+}
+
+// After a run finishes, make sure some waveform is actually on screen. The
+// canvas is sized (autoCanvasHeight) so this is usually already true; this is
+// the backstop for the cases sizing cannot cover, such as a persisted grip
+// height, a very short window, or the user having scrolled up mid-run.
+//
+// Deliberately conservative: it only scrolls when LESS THAN a readable strip of
+// the first plot is showing, and it scrolls the minimum distance rather than
+// centring the plot. Yanking the viewport out from under someone who is looking
+// at the schematic is worse than the problem being solved.
+const PLOT_VISIBLE_MIN = 90; // px of plot card that counts as "you can see it"
+function revealPlots() {
+  const card = document.querySelector('#plots .chartcard');
+  if (!card || typeof card.getBoundingClientRect !== 'function') return;
+  const r = card.getBoundingClientRect();
+  if (!r.height) return;
+  const shown = Math.min(r.bottom, window.innerHeight) - Math.max(r.top, 0);
+  if (shown >= Math.min(PLOT_VISIBLE_MIN, r.height)) return; // enough already
+  const want = Math.min(PLOT_VISIBLE_MIN, r.height);
+  const by = Math.round(r.top - (window.innerHeight - want));
+  if (by <= 0) return;
+  // Smooth only when motion is welcome. Two reasons, one of which is not
+  // accessibility: a smooth scroll is driven by the compositor, so in any
+  // context that is not painting (a hidden tab, an automated browser) it is
+  // silently a no-op and the backstop quietly does nothing. An instant scroll
+  // always lands.
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  window.scrollBy({ top: by, behavior: reduce ? 'auto' : 'smooth' });
 }
 
 // ---- demo circuit ----
