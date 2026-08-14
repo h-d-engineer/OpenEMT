@@ -286,12 +286,69 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
   .emt .library{width:188px}
   .emt.lib .props{left:204px}
 }
+/* Narrow screens: the three drawers become one bottom sheet.
+   As side rails they were unusable here. On a 345px canvas the science rail
+   covered 70% of the width, params 63% and the library 55%, so the panel about
+   a block hid the block, and with the Library open the params rail reached
+   380px on a 375px viewport and gave the whole page a horizontal scrollbar.
+   Full-width and bottom-anchored, capped at 46% so the schematic keeps the top
+   half, is the shape that actually fits a phone.
+   Only one can occupy the slot, so there is a priority: Library (you are
+   placing a block) beats Params (you are editing one) beats Science (you are
+   reading about one). Each is already a labelled toolbar toggle, so switching
+   between them is the control the user already has. */
+/* Hidden on desktop: the full toolbar fits there, so a More button would only
+   add a control that does nothing useful. */
+.emt .morebtn{display:none;font-size:12px;padding:5px 10px;background:transparent;color:var(--tx);
+  border:1px solid var(--bds);border-radius:8px;cursor:pointer}
+.emt .morebtn.on{background:var(--accf);color:var(--acct);border-color:var(--accf)}
+.emt .fabrun{display:none;position:fixed;right:14px;bottom:14px;z-index:40;
+  min-height:44px;min-width:88px;padding:0 16px;font-size:14px;font-weight:600;
+  align-items:center;justify-content:center;gap:6px;cursor:pointer;
+  border:1px solid var(--accf);border-radius:22px;background:var(--accf);color:var(--acct);
+  box-shadow:0 4px 18px rgba(0,0,0,.3)}
+.emt .fabrun.stop{background:var(--err);border-color:var(--err);color:var(--sfc)}
 @media(max-width:760px){
-  .emt .props{width:196px;padding:.45rem .6rem}
-  .emt .sci-rail{width:220px;padding:.45rem .6rem}
   #cnv{height:380px}
-  .emt .library{width:168px}
-  .emt.lib .props{left:184px}
+  /* Touch targets. Everything that stays visible is at least 44px tall, which
+     is the whole point of collapsing the rest: 30 controls at 21px do not
+     become usable by rearranging them. */
+  .emt .pal button,.emt .pal select,.emt .pal input[type=number]{min-height:44px}
+  .emt .pal .tcl{padding:4px 8px}
+  .emt .morebtn{display:inline-flex;align-items:center;min-height:44px}
+  .emt.fab .fabrun{display:flex}
+  /* Collapsed by default: Edit and Sim entirely, and the File cluster down to
+     the Examples picker. Library, Examples, Power flow and Run are what a
+     visitor needs to see something happen. */
+  .emt .tcl-edit,.emt .tcl-sim,.emt .tcl-file .filemore,.emt .runmore{display:none}
+  .emt.more .tcl-edit,.emt.more .tcl-sim{display:flex}
+  .emt.more .tcl-file .filemore,.emt.more button.runmore{display:inline-flex}
+  .emt.more span.runmore{display:inline-flex}
+  /* A checkbox is 13px and cannot grow, so the tap target is its label.
+     Deliberately does NOT set display on .mode: it is already inline-flex from
+     the base rule, and re-declaring it here outranked the .runmore collapse
+     above (.emt .pal .mode beats .emt .runmore) so Init from PF stayed visible
+     in the collapsed toolbar. Only the label, which has no competing rule,
+     gets a display of its own. */
+  .emt .pal .mode{min-height:44px;align-items:center}
+  .emt .pal .mode label{min-height:44px;display:inline-flex;align-items:center}
+  .emt .pal input[type=checkbox]{width:20px;height:20px}
+  /* Cluster labels cost a row's worth of width once the buttons are 44px tall,
+     and the surviving clusters are self-evident. */
+  .emt .tcl-l{display:none}
+  /* Stop is disabled except during a run, and a permanently dead 44px button is
+     just clutter; the sticky control becomes Stop while running instead. */
+  .emt #stopbtn:disabled{display:none}
+  .emt .props,.emt .sci-rail,.emt .library{
+    left:8px;right:8px;width:auto;top:auto;bottom:8px;
+    max-height:46%;padding:.5rem .7rem;border-radius:12px}
+  .emt.lib .props{left:8px}
+  .emt.lib .props,.emt.lib .sci-rail{display:none}
+  .emt.sel:not(.hideparam) .sci-rail{display:none}
+  /* The library lists blocks in a single column as a side rail; across the full
+     width that wastes the row, so it wraps into a grid instead. */
+  .emt .libitems{flex-direction:row;flex-wrap:wrap}
+  .emt .library .palitem{width:auto;flex:1 1 132px}
 }
 /* Science / formula panel (educational layer). Collapsible per-block physics
    + equations with live values and an inline equivalent-circuit SVG. */
@@ -330,8 +387,11 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
   <h1 class="brand">OpenEMT</h1>
   <button class="infobtn" id="infobtn" onclick="toggleAbout()"
     title="What OpenEMT is, and the beta caveat">&#9432;</button>
-  <span class="projname" id="projname" title="Loaded circuit &mdash; &bull; marks unsaved changes">Demo</span>
-  <div class="statusline" id="stat" style="flex:1">Demo: breaker energizes the feeder at t = 30 ms. Press / to find a block by name. Click blocks to edit, drag to move, click two terminals to wire. Click a wire to highlight what it connects (Delete removes it). Scroll or use +/&minus; to zoom, drag empty canvas to pan. Select a block and press R to rotate it 90&deg;.</div>
+  <span class="projname" id="projname" title="Loaded circuit. &bull; marks unsaved changes">Demo</span>
+  <!-- Replaced within ~400ms by whatever the landing case reports, so this is
+       the pre-boot state, not onboarding. The interaction model needs a home
+       that does not self-destruct; that is Phase 3 in IDEAS.md. -->
+  <div class="statusline" id="stat" style="flex:1">Loading&#8230;</div>
   <div class="findbox" id="findbox">
     <input id="findq" type="text" autocomplete="off" spellcheck="false" placeholder="Find block  &#47;"
       title="Find a block by name, type or id. Press / from anywhere to jump here; Up/Down previews each match, Enter selects it and Enter again steps to the next, Esc leaves the search and returns to where you were."
@@ -344,14 +404,18 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
   <button class="aboutx" onclick="toggleAbout()" title="Hide this (the &#9432; button brings it back)">Dismiss</button></p>
 <div class="notice" id="notice" role="status" aria-live="polite">
   <span class="notice-t"><span class="notice-l" id="noticelab"></span><span id="noticemsg"></span></span>
-  <button onclick="clearNotice()" title="Dismiss">Dismiss</button>
+  <button onclick="clearNotice(true)" title="Dismiss">Dismiss</button>
 </div>
 
 <div class="pal">
+  <!-- Narrow screens show only Library, Examples, Power flow and Run; this
+       reveals the rest. Hidden on desktop, where everything already fits. -->
+  <button id="morebtn" class="morebtn" onclick="toggleMore()"
+    title="Show the rest of the toolbar: edit, file and simulation settings.">&#8943; More</button>
   <div class="tcl"><span class="tcl-l">Blocks</span>
     <button id="libbtn" onclick="toggleLibrary()" title="Show/hide the component library. Click an item to drop it on the canvas, or drag it where you want it.">Library</button>
   </div>
-  <div class="tcl"><span class="tcl-l">Edit</span>
+  <div class="tcl tcl-edit"><span class="tcl-l">Edit</span>
     <button id="undobtn" onclick="undo()" disabled title="Undo (Ctrl+Z)">&#8630; Undo</button>
     <button id="redobtn" onclick="redo()" disabled title="Redo (Ctrl+Y / Ctrl+Shift+Z)">&#8631; Redo</button>
     <button onclick="delSelected()">Delete</button>
@@ -361,21 +425,21 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
     <button id="parambtn" onclick="toggleParams()" title="Show/hide the parameter panel that appears when a block is selected. Off keeps the canvas unobstructed while navigating and rearranging.">&#9881; Params</button>
     <button id="scibtn" onclick="toggleScience()" title="Show/hide the physics/equations panel that appears when a block is selected. Off keeps the canvas unobstructed while navigating and rearranging.">&#9883; Science</button>
   </div>
-  <div class="tcl"><span class="tcl-l">File</span>
-    <button onclick="saveCircuit()">Save</button>
+  <div class="tcl tcl-file"><span class="tcl-l">File</span>
+    <button class="filemore" onclick="saveCircuit()">Save</button>
     <select id="examplesel" onchange="loadExampleByName(this.value);this.selectedIndex=0"
       title="Open a shipped example circuit. Nothing to download: they are built into this file.">
       <option value="">Examples&#8230;</option>
     </select>
-    <button onclick="copyCaseLink()" title="Copy a shareable link to this case. Shipped examples only: an arbitrary circuit does not fit in a URL, so use Save for those.">&#128279; Link</button>
-    <button onclick="document.getElementById('loadfile').click()">Load</button>
+    <button class="filemore" onclick="copyCaseLink()" title="Copy a shareable link to this case. Shipped examples only: an arbitrary circuit does not fit in a URL, so use Save for those.">&#128279; Link</button>
+    <button class="filemore" onclick="document.getElementById('loadfile').click()">Load</button>
     <input type="file" id="loadfile" accept=".json,application/json" style="display:none"
       onchange="if(this.files[0])loadCircuit(this.files[0]);this.value=''">
-    <button onclick="document.getElementById('importfile').click()" title="Import a PSS/E RAW case (.raw) and convert it to an OpenEMT circuit. Generators become synchronous machines with generic placeholder dynamics.">Import</button>
+    <button class="filemore" onclick="document.getElementById('importfile').click()" title="Import a PSS/E RAW case (.raw) and convert it to an OpenEMT circuit. Generators become synchronous machines with generic placeholder dynamics.">Import</button>
     <input type="file" id="importfile" accept=".raw,.RAW" style="display:none"
       onchange="if(this.files[0])importCircuit(this.files[0]);this.value=''">
   </div>
-  <div class="tcl"><span class="tcl-l">Sim</span>
+  <div class="tcl tcl-sim"><span class="tcl-l">Sim</span>
     <span class="mode"><label>Phases</label>
       <select id="phmode" style="width:64px;height:26px" onchange="runEMTLive()">
         <option value="1">1-ph</option>
@@ -404,14 +468,20 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
       title="Numerics: solver time step, plot sampling, and flow arrows.">&#9881;</button>
   </div>
   <div class="tcl"><span class="tcl-l">Run</span>
-    <button id="pfbtn" onclick="solvePF()" title="Solve the steady-state power flow and annotate each bus with |V| (pu) and angle (green in the 0.95 to 1.05 band, red outside).">&#9878; Power flow</button>
-    <span class="mode" title="Start the Run from the power-flow operating point instead of a cold start (no startup swing). Solves the power flow first; falls back to cold start if it does not converge.">
+    <button id="pfbtn" class="runmore" onclick="solvePF()" title="Solve the steady-state power flow and annotate each bus with |V| (pu) and angle (green in the 0.95 to 1.05 band, red outside).">&#9878; Power flow</button>
+    <span class="mode runmore" title="Start the Run from the power-flow operating point instead of a cold start (no startup swing). Solves the power flow first; falls back to cold start if it does not converge.">
       <label><input type="checkbox" id="pfinit" checked> Init from PF</label>
     </span>
     <button id="runbtn" onclick="runEMTLive()" style="font-weight:600">&#9654; Run</button>
     <button id="stopbtn" onclick="stopSim()" disabled>&#9632; Stop</button>
   </div>
 </div>
+<!-- Sticky Run for narrow screens. The toolbar is at the top of a page you
+     scroll down to reach the plots, so once you are looking at a waveform the
+     primary verb is off screen. Appears only under 760px and only once the
+     real Run button has scrolled out of view, and becomes Stop while a run is
+     in flight so a long run can be cancelled without scrolling back up. -->
+<button id="fabrun" class="fabrun" onclick="fabAction()">&#9654; Run</button>
 <div id="simadv" class="simadv" style="display:none">
   <div class="simadv-hd">Numerics</div>
   <span class="mode" title="Solver's internal trapezoidal step. Smaller = more accurate but slower; larger risks numerical ringing.">
@@ -453,9 +523,9 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
   <span class="flexpad"></span>
   <span id="zoominfo" class="zoominfo"></span>
   <span class="zmode" id="zoommode" title="What a drag/scroll on a plot zooms. Time (X) is shared by every plot; vertical (Y) is per plot.">
-    <button data-m="x" onclick="setZoomMode('x')" title="Time only — one shared window across every plot">Time</button>
-    <button data-m="y" onclick="setZoomMode('y')" title="Vertical only — rescales this plot's value axes">Value</button>
-    <button data-m="box" onclick="setZoomMode('box')" title="Free rectangle — time and value together">Box</button>
+    <button data-m="x" onclick="setZoomMode('x')" title="Time only: one shared window across every plot">Time</button>
+    <button data-m="y" onclick="setZoomMode('y')" title="Vertical only: rescales this plot's value axes">Value</button>
+    <button data-m="box" onclick="setZoomMode('box')" title="Free rectangle: time and value together">Box</button>
   </span>
   <button onclick="plotZoomBy(1.5)" title="Zoom in">+</button>
   <button onclick="plotZoomBy(1/1.5)" title="Zoom out">&minus;</button>

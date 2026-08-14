@@ -76,7 +76,7 @@ function buildNodes(nph) {
     for (let i = 1; i < n; i++) uni(b.id + '_0', b.id + '_' + i);
   });
   const gnds = S.blocks.filter(b => b.type === 'gnd');
-  if (!gnds.length) return { err: 'Add a ground block and wire it — the solver needs a reference node.' };
+  if (!gnds.length) return { err: 'Add a ground block and wire it: the solver needs a reference node.' };
   const gset = new Set(gnds.map(g => find(g.id + '_0')));
   // gfm's DC port (term 2) is optional (SPEC §2) — every terminal still gets
   // its own union-find node regardless, so a never-wired term 2 would
@@ -94,7 +94,7 @@ function buildNodes(nph) {
     const r = find(b.id + '_' + ti);
     if (!gset.has(r) && nodeIds[r] === undefined) nodeIds[r] = nn++;
   }));
-  if (nn === 0) return { err: 'Circuit is entirely grounded — nothing to solve.' };
+  if (nn === 0) return { err: 'Circuit is entirely grounded: nothing to solve.' };
   const nid = (b, ti) => { const r = find(b.id + '_' + ti); return gset.has(r) ? -1 : nodeIds[r]; };
 
   // classify nodes AC/DC: typed blocks seed, passives propagate (SPEC section 1)
@@ -140,7 +140,7 @@ function buildNodes(nph) {
       else if (tb && !ta && na >= 0) { type[na] = tb; changed = true; }
     });
   }
-  if (conflict) return { err: 'A node connects the AC and DC sides directly — join them only through a PFC (terminal 0 = AC in, terminal 1 = DC+ out) or a GFM inverter\'s DC port (terminal 2).' };
+  if (conflict) return { err: 'A node connects the AC and DC sides directly: join them only through a PFC (terminal 0 = AC in, terminal 1 = DC+ out) or a GFM inverter\'s DC port (terminal 2).' };
   for (let n = 0; n < nn; n++) if (!type[n]) type[n] = 'ac';
 
   // ---- single-phase laterals (SPEC §2 "Phase tap"): per-node PHASE identity ----
@@ -200,7 +200,7 @@ function buildNodes(nph) {
   }
   if (phConflict) {
     return { err: (DEFS[phConflict.type] ? DEFS[phConflict.type].label : phConflict.type) + ' #' + phConflict.id +
-      ' joins a 3-phase node to a single-phase lateral — only a Phase Tap block can bridge those. Insert a tap (or move the block fully onto one side).' };
+      ' joins a 3-phase node to a single-phase lateral: only a Phase Tap block can bridge those. Insert a tap (or move the block fully onto one side).' };
   }
   for (let n = 0; n < nn; n++) if (phs[n] === null) phs[n] = -1; // unknown ⇒ full 3-phase set (backward compatible)
 
@@ -230,7 +230,7 @@ function buildNodes(nph) {
     return { err: (DEFS[badLat.type] ? DEFS[badLat.type].label : badLat.type) + ' #' + badLat.id +
       ' is not supported on a single-phase lateral' +
       (isPiLine(badLat) ? ' with shunt C (set C to 0)' : (badLat.type === 'xfmr' ? ' with a magnetizing branch (set Lm to 0)' : '')) +
-      ' — it is modeled across the whole phase set. Move it to the 3-phase side of the tap.' };
+      ': it is modeled across the whole phase set. Move it to the 3-phase side of the tap.' };
   }
 
   // per-node unknown counts, node-major offsets
@@ -459,17 +459,17 @@ function simulate(nph, Tms, onChunk, dtUs, plotUs) {
   const badLim = S.blocks.find(b => b.type === 'gfm' && +b.params.Iacmax > 0 &&
     (nph !== 3 || topo.blockPh(b) >= 0));
   if (badLim) {
-    return { err: 'GFM inverter #' + badLim.id + ': the AC current limit (I ac max) is not supported on a single-phase inverter — single-phase P/Q need a full cycle to measure, so the limiter is unreliable during a fault. Set I ac max to 0 here, or use a 3-phase inverter.' };
+    return { err: 'GFM inverter #' + badLim.id + ': the AC current limit (I ac max) is not supported on a single-phase inverter. Single-phase P/Q need a full cycle to measure, so the limiter is unreliable during a fault. Set I ac max to 0 here, or use a 3-phase inverter.' };
   }
   const badPiLine = S.blocks.find(b => isCoupled(b) && isPiLine(b));
   if (badPiLine) {
-    return { err: 'Line #' + badPiLine.id + ': mutual coupling (Rm/Lm) and shunt C together aren\'t supported — set one to 0.' };
+    return { err: 'Line #' + badPiLine.id + ': mutual coupling (Rm/Lm) and shunt C together aren\'t supported. Set one to 0.' };
   }
   const badRelay = S.blocks.find(b => (b.type === 'relay' || b.type === 'vsw' || b.type === 'gtrip' || b.type === 'zrel') &&
     !S.blocks.some(t => t.type === 'brk' && t.id === Math.round(+b.params.brkId)));
   if (badRelay) {
     const label = { relay: 'Relay #', gtrip: 'Generation trip #', vsw: 'Shunt controller #', zrel: 'Distance relay #' };
-    return { err: (label[badRelay.type] || 'Relay #') + badRelay.id + ': "breaker block #" (' + badRelay.params.brkId + ') doesn\'t match any breaker — set it to the # shown on the breaker it should switch.' };
+    return { err: (label[badRelay.type] || 'Relay #') + badRelay.id + ': "breaker block #" (' + badRelay.params.brkId + ') doesn\'t match any breaker. Set it to the # shown on the breaker it should switch.' };
   }
   // Frequency elements (81O/81U) and distance relays require a 3-phase AC sensor:
   // the SRF-PLL / positive-sequence phasor needs three phases. On a lateral or in
@@ -490,21 +490,21 @@ function simulate(nph, Tms, onChunk, dtUs, plotUs) {
   const badBlind = S.blocks.find(b => b.type === 'zrel' && Math.round(+b.params.oos) > 0 &&
     !(+b.params.RB1 > 0 && +b.params.RB2 > +b.params.RB1));
   if (badBlind) {
-    return { err: 'Distance relay #' + badBlind.id + ': out-of-step tripping needs blinders with RB2 > RB1 > 0 (outer then inner, in ohms) — got RB1 = ' + badBlind.params.RB1 + ', RB2 = ' + badBlind.params.RB2 + '. Set both, or set "OOS trip" to 0.' };
+    return { err: 'Distance relay #' + badBlind.id + ': out-of-step tripping needs blinders with RB2 > RB1 > 0 (outer then inner, in ohms). Got RB1 = ' + badBlind.params.RB1 + ', RB2 = ' + badBlind.params.RB2 + '. Set both, or set "OOS trip" to 0.' };
   }
 
   const dtUsEff = dtUs > 0 ? dtUs : 50;
   const dt = dtUsEff * 1e-6, T = Tms / 1000, N = Math.round(T / dt);
   const badTline = S.blocks.find(b => (b.type === 'tline' || b.type === 'fdline') && b.params.tau < dtUsEff);
   if (badTline) {
-    return { err: (badTline.type === 'tline' ? 'TW line #' : 'FD line #') + badTline.id + ': travel time (' + badTline.params.tau + ' µs) must be ≥ the solver time step (' + dtUsEff + ' µs) — lengthen the line or shrink dt.' };
+    return { err: (badTline.type === 'tline' ? 'TW line #' : 'FD line #') + badTline.id + ': travel time (' + badTline.params.tau + ' µs) must be ≥ the solver time step (' + dtUsEff + ' µs). Lengthen the line or shrink dt.' };
   }
   // Transformer ratio must be finite and positive: a 0/absent winding voltage
   // with no legacy `a` fallback would put NaN in the matrix and silently NaN
   // the whole run (July 2026 review).
   const badXA = xfmrRatioBad();
   if (badXA) {
-    return { err: 'Transformer #' + badXA.id + ': rated winding voltages must all be > 0 — check V1/V2' + (badXA.type === 'xfmr3w' ? '/V3' : '') + '.' };
+    return { err: 'Transformer #' + badXA.id + ': rated winding voltages must all be > 0. Check V1/V2' + (badXA.type === 'xfmr3w' ? '/V3' : '') + '.' };
   }
   const phEls = [];
   for (let p = 0; p < nph; p++) phEls.push(makeElements(topo, dt, p, nph));
@@ -572,7 +572,7 @@ function simulate(nph, Tms, onChunk, dtUs, plotUs) {
 
   let fact = buildLU(D, phEls, sEls);
   if (!fact || fact.singularAt !== undefined) {
-    return { err: 'Singular matrix — a node is floating. Wire every terminal and give the circuit a return path to ground. (A DC bus also needs a capacitor.)' +
+    return { err: 'Singular matrix: a node is floating. Wire every terminal and give the circuit a return path to ground. (A DC bus also needs a capacitor.)' +
       (fact && fact.singularAt !== undefined ? describeSingular(fact.singularAt) : '') };
   }
 
@@ -901,7 +901,7 @@ function simulate(nph, Tms, onChunk, dtUs, plotUs) {
     if (switched) {
       fact = buildLU(D, phEls, sEls);
       if (!fact || fact.singularAt !== undefined) {
-        return { err: 'Singular after switching at t = ' + (t * 1000).toFixed(2) + ' ms — an island lost its ground reference.' +
+        return { err: 'Singular after switching at t = ' + (t * 1000).toFixed(2) + ' ms: an island lost its ground reference.' +
           (fact && fact.singularAt !== undefined ? describeSingular(fact.singularAt) : '') };
       }
       refacts++;
@@ -937,7 +937,7 @@ function simulate(nph, Tms, onChunk, dtUs, plotUs) {
     // detect it (Math.abs(NaN) < eps is false), so without this the whole run
     // silently outputs NaN (July 2026 review). One O(D) check, first step only.
     if (k === 0 && !V.every(Number.isFinite)) {
-      return { err: 'First solve step produced NaN/Infinity — a block parameter makes the matrix invalid (e.g. a 0 Ω / 0 mH series branch, or a conflicting parameter edit). Check recently changed parameters.' };
+      return { err: 'First solve step produced NaN/Infinity: a block parameter makes the matrix invalid (e.g. a 0 Ω / 0 mH series branch, or a conflicting parameter edit). Check recently changed parameters.' };
     }
 
     // Divergence guard. A numerically unstable run does not fail, it grows:
@@ -1666,11 +1666,11 @@ function solvePowerFlow(opt) {
   // equivalent, which is what PSS/E cases with 3-winding units needed.
   const pfSeries = S.blocks.find(b => b.type === 'tline' || b.type === 'fdline' || b.type === 'scale' || b.type === 'tap');
   if (pfSeries) {
-    return { err: 'Power flow has no model for ' + DEFS[pfSeries.type].label + ' #' + pfSeries.id + ' — a series element it can\'t stamp would disconnect the network there. Replace it with a plain line/transformer for the PF, or skip the power flow and run the EMT solve directly.' };
+    return { err: 'Power flow has no model for ' + DEFS[pfSeries.type].label + ' #' + pfSeries.id + ': a series element it can\'t stamp would disconnect the network there. Replace it with a plain line/transformer for the PF, or skip the power flow and run the EMT solve directly.' };
   }
   const badXA = xfmrRatioBad();
   if (badXA) {
-    return { err: 'Transformer #' + badXA.id + ': rated winding voltages must all be > 0 — check V1/V2' + (badXA.type === 'xfmr3w' ? '/V3' : '') + '.' };
+    return { err: 'Transformer #' + badXA.id + ': rated winding voltages must all be > 0. Check V1/V2' + (badXA.type === 'xfmr3w' ? '/V3' : '') + '.' };
   }
   const freqSrc = S.blocks.find(b => b.type === 'src' || b.type === 'gfm' || b.type === 'syncgen' || b.type === 'gfl');
   const f0 = freqSrc ? (freqSrc.params.f || freqSrc.params.f0 || 60) : 60;

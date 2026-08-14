@@ -5068,4 +5068,52 @@ console.log('gfm status:', els_stubs.stat.textContent);
  record('docs','every text token clears WCAG AA 4.5:1 on every surface, both themes', !fails.length);
 }
 
+// ---- no em/en dashes in user-visible text ----
+// CLAUDE.md bans them from anything user-facing. Code comments are exempt (they
+// are not a deliverable), so this has to tell the two apart rather than grep the
+// file: it scans src/*.js tracking comment and string state and flags dashes
+// only inside string literals, plus the visible text and attributes of
+// shell.html outside its <style> block and HTML comments.
+//
+// Worth enforcing because these arrive by hand one at a time, and the solver's
+// error strings are now displayed in a prominent notice band where a stray dash
+// is most visible.
+{
+ const fs=require('fs'), path=require('path');
+ const D=/[—–]/;
+ const bad=[];
+ const scanJs=(file,src)=>{
+  let i=0,st='code',q=null,line=1;
+  while(i<src.length){
+   const ch=src[i];
+   if(ch==='\n') line++;
+   if(st==='code'){
+    if(ch==='/'&&src[i+1]==='/'){st='line';i+=2;continue;}
+    if(ch==='/'&&src[i+1]==='*'){st='block';i+=2;continue;}
+    if(ch==='"'||ch==="'"||ch==='`'){st='str';q=ch;i++;continue;}
+   } else if(st==='line'){ if(ch==='\n') st='code'; }
+   else if(st==='block'){ if(ch==='*'&&src[i+1]==='/'){st='code';i+=2;continue;} }
+   else if(st==='str'){
+    if(ch==='\\'){i+=2;continue;}
+    if(ch===q){st='code';q=null;i++;continue;}
+   }
+   if(st==='str'&&D.test(ch)) bad.push(file+':'+line+' '+JSON.stringify(src.slice(Math.max(0,i-45),i+45)));
+   i++;
+  }
+ };
+ ['ui.js','solver.js','blocks.js','import.js'].forEach(f=>{
+  const fp=path.join(__dirname,'src',f);
+  if(fs.existsSync(fp)) scanJs('src/'+f, fs.readFileSync(fp,'utf8'));
+ });
+ // shell.html: markup after </style>, minus HTML comments.
+ const sh=fs.readFileSync(path.join(__dirname,'src','shell.html'),'utf8');
+ const markup=(sh.split('</style>')[1]||'').replace(/<!--[\s\S]*?-->/g,'');
+ (markup.match(/[—–]|&[mn]dash;/g)||[]).forEach(m=>{
+  const at=markup.indexOf(m);
+  bad.push('src/shell.html '+JSON.stringify(markup.slice(Math.max(0,at-45),at+45)));
+ });
+ if(bad.length) bad.slice(0,8).forEach(b=>console.log('  dash: '+b));
+ record('docs','no em/en dashes in user-visible strings or markup', !bad.length);
+}
+
 summary();

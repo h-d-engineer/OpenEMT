@@ -314,13 +314,13 @@ function render() {
     if (!flowOn) return;
     // power-flow arrows (SPEC §3, July 2026): 2 marching HALF-arrowheads per
     // quantity, riding the wire's own Manhattan path (no offset track needed)
-    // — P's marker is only the upper half of a full arrowhead (flat edge on
+    //: P's marker is only the upper half of a full arrowhead (flat edge on
     // the centerline, point forward), sitting visually "above" the wire; Q's
     // is the mirrored lower half, sitting "below" it. wireFlow[i]/wireFlowQ[i]
     // undefined = no meaningful flow (unrun circuit, near-zero power, or an
-    // endpoint we can't attribute) — no marker, wire renders exactly as
+    // endpoint we can't attribute): no marker, wire renders exactly as
     // before. P and Q are independent (an AC branch carries both at once,
-    // and they can point opposite ways — e.g. a capacitive branch exports Q
+    // and they can point opposite ways: e.g. a capacitive branch exports Q
     // while still importing P), never a shared "one arrow, two colors."
     const flowPath = (ps, pe) => 'M' + ps[0] + ' ' + ps[1] + ' L' + mx + ' ' + ps[1] + ' L' + mx + ' ' + pe[1] + ' L' + pe[0] + ' ' + pe[1];
     const marker = (dirMap, color, points) => {
@@ -349,7 +349,7 @@ function render() {
       (rot ? ' transform="rotate(' + rot + ' ' + cx + ' ' + cy + ')"' : '') + '>';
     // invisible hit-target: bare line-art symbols are hard to grab, so the
     // whole box area stays clickable/draggable (label has its own hit target
-    // below, since it's rendered unrotated outside this group — see blockLabel)
+    // below, since it's rendered unrotated outside this group: see blockLabel)
     h += '<rect x="' + b.x + '" y="' + b.y + '" width="' + d.w + '" height="' + d.h + '" fill="transparent" stroke="none"/>';
     if (sel) h += '<rect x="' + (b.x - 4) + '" y="' + (b.y - 4) + '" width="' + (d.w + 8) + '" height="' + (d.h + 8) +
       '" rx="6" fill="none" stroke="' + acc + '" stroke-width="1" stroke-dasharray="4 3"/>';
@@ -406,13 +406,13 @@ function render() {
   cnv.innerHTML = h;
 }
 
-// ---- IEC-style block symbols (SPEC §3). The block IS the symbol — no boxes.
+// ---- IEC-style block symbols (SPEC §3). The block IS the symbol: no boxes.
 // Each symbol is drawn on the block's terminal midline inside its existing
 // w×h box, leads meeting the exact getTerms() points, so wires/topology/
 // rotation are untouched. Labels are rendered separately (blockLabel) so
 // they always read horizontally, never rotated sideways with the symbol.
 // Canvas sub-labels read straight off params, and an imported case carries full
-// double precision — a PSS/E line lands as 0.0034567890123 Ω and the number
+// double precision: a PSS/E line lands as 0.0034567890123 Ω and the number
 // runs off the symbol. nn() trims what is DISPLAYED only; the stored parameter
 // is untouched, so nothing about the solve changes. Integers pass through
 // whole (a 2400 V source must not read "2.40e+3"), long decimals get four
@@ -452,7 +452,7 @@ function blockSub(b) {
     : b.type === 'brk' ? 'cl=' + b.params.tclose + ' op=' + b.params.topen + 'ms'
     : b.type === 'relay' ? b.params.Ipu + 'A ' + b.params.curve + ' TD=' + b.params.TD + ' →#' + b.params.brkId
     : b.type === 'vsw' ? b.params.Von + '/' + b.params.Voff + 'V →#' + b.params.brkId
-    : b.type === 'gtrip' ? (b.params.Vov || b.params.Fov || '—') + ' →#' + b.params.brkId
+    : b.type === 'gtrip' ? (b.params.Vov || b.params.Fov || 'off') + ' →#' + b.params.brkId
     : b.type === 'mov' ? b.params.Vc + 'V ' + b.params.Rd + 'Ω'
     : b.type === 'tline' ? b.params.Z + 'Ω τ=' + b.params.tau + 'µs'
     : b.type === 'fdline' ? b.params.Zh + '/' + b.params.Zlf + 'Ω τ=' + b.params.tau + 'µs'
@@ -475,10 +475,10 @@ function blockSymbol(b, d, selc, selw, sfc, tx, tx3) {
         + '<path d="M' + (cx - 10) + ' ' + my + ' q 5 -11 10 0 q 5 11 10 0" fill="none" stroke="' + tx + '" stroke-width="1.4"/>';
       break;
     }
-    case 'syncgen': { // IEC rotating-machine symbol: circle with "G" — visually
+    case 'syncgen': { // IEC rotating-machine symbol: circle with "G": visually
       // distinct from src's circle+sine (idealized EMF) and gfm's square+sine
       // (power-electronic converter), since it's a genuinely different kind
-      // of device — a spinning mass with inertia, not an idealized/converted
+      // of device: a spinning mass with inertia, not an idealized/converted
       // source (SPEC §2).
       const r = 16;
       s += ln(x, my, cx - r, my, selc, selw) + ln(cx + r, my, x + w, my, selc, selw)
@@ -486,7 +486,7 @@ function blockSymbol(b, d, selc, selw, sfc, tx, tx3) {
         + txt(cx, my + 5, 'G', 16, tx, 700);
       break;
     }
-    case 'im': { // IEC rotating-machine symbol: circle with "M" — same family
+    case 'im': { // IEC rotating-machine symbol: circle with "M": same family
       // as syncgen's circle+G (both are spinning masses), distinct letter for
       // the motor role (SPEC §2).
       const r = 16;
@@ -536,7 +536,7 @@ function blockSymbol(b, d, selc, selw, sfc, tx, tx3) {
         + '<polygon points="' + (cx + 9) + ',' + (my + 9) + ' ' + (cx - 1) + ',' + (my + 6) + ' ' + (cx + 6) + ',' + (my - 1) + '" fill="' + selc + '"/>';
       break;
     }
-    case 'zip': { // composite load: box with 'ZIP' — the letters ARE the
+    case 'zip': { // composite load: box with 'ZIP': the letters ARE the
       // model (Z/I/P parts), more informative than another arrow glyph
       const r = 17;
       s += ln(x, my, cx - r, my, selc, selw) + ln(cx + r, my, x + w, my, selc, selw)
@@ -573,7 +573,7 @@ function blockSymbol(b, d, selc, selw, sfc, tx, tx3) {
     }
     case 'rlcp': { // parallel RLC: R, L, C as parallel branches between the
       // two terminals (two vertical buses, one horizontal branch per present
-      // part) — INVERSE of series rlc's left-to-right chain. A component with
+      // part): INVERSE of series rlc's left-to-right chain. A component with
       // a non-positive value (-1 absent sentinel; 0 is a real short in
       // parallel but degenerate) is dropped; with one part left the symbol
       // collapses to that single midline glyph (standalone style), and with
@@ -622,8 +622,8 @@ function blockSymbol(b, d, selc, selw, sfc, tx, tx3) {
       for (const r of rows) s += r[1](r[0]);
       break;
     }
-    case 'xfmr': { // two overlapping circles — "1"/"2" tag each winding side
-      // (term 0 = winding 1 lead, term 1 = winding 2 lead — SPEC §2 ratio a=N1/N2)
+    case 'xfmr': { // two overlapping circles: "1"/"2" tag each winding side
+      // (term 0 = winding 1 lead, term 1 = winding 2 lead: SPEC §2 ratio a=N1/N2)
       const r = 13;
       s += ln(x, my, cx - r - 6, my, selc, selw) + ln(cx + r + 6, my, x + w, my, selc, selw)
         + '<circle cx="' + (cx - 7) + '" cy="' + my + '" r="' + r + '" fill="none" stroke="' + selc + '" stroke-width="' + selw + '"/>'
@@ -632,7 +632,7 @@ function blockSymbol(b, d, selc, selw, sfc, tx, tx3) {
       break;
     }
     case 'xfmr3': { // two overlapping circles like xfmr, plus the connection
-      // string — the vector group IS the block's identity (SPEC §2). "1"/"2"
+      // string: the vector group IS the block's identity (SPEC §2). "1"/"2"
       // tag each winding side (term 0 = winding 1, term 1 = winding 2).
       const r = 12;
       s += ln(x, my, cx - 2 * r + 4, my, selc, selw) + ln(cx + 2 * r - 4, my, x + w, my, selc, selw)
@@ -686,7 +686,7 @@ function blockSymbol(b, d, selc, selw, sfc, tx, tx3) {
     }
     case 'scale': { // aggregation current-scaling coupler: box with a
       // gain-block triangle (network side -> reference-unit side), the
-      // classic amplifier/multiplier glyph — distinct from hvdc's ~=~ box
+      // classic amplifier/multiplier glyph: distinct from hvdc's ~=~ box
       // since this element scales CURRENT only, no AC/DC conversion (SPEC §2)
       const bx = x + 18, bw = w - 36;
       s += ln(x, my, bx, my, selc, selw) + ln(bx + bw, my, x + w, my, selc, selw)
@@ -745,10 +745,10 @@ function blockSymbol(b, d, selc, selw, sfc, tx, tx3) {
       break;
     }
     case 'gfm': { // AC/DC inverter: square with sine (AC leads) + a DC lead
-      // dropping to the optional DC+ port below (terms[2] — SPEC §2). term 0
+      // dropping to the optional DC+ port below (terms[2]: SPEC §2). term 0
       // (left) is conventionally wired to the inverter's own local ground
-      // reference, term 1 (right) to the grid/AC bus it ties into — every
-      // shipped example wires it this way — so tag them GND / AC to match;
+      // reference, term 1 (right) to the grid/AC bus it ties into: every
+      // shipped example wires it this way: so tag them GND / AC to match;
       // the bottom lead is the DC+ port (returns via system ground, no
       // separate DC return terminal).
       const r = 19;
@@ -780,7 +780,7 @@ function blockSymbol(b, d, selc, selw, sfc, tx, tx3) {
       break;
     }
     case 'dcdc': { // DC/DC converter: square, diagonal, = / = (both sides DC,
-      // unlike pfc's ~/= — same visual family, immediately reads "DC to DC")
+      // unlike pfc's ~/=: same visual family, immediately reads "DC to DC")
       const r = 19;
       s += ln(x, my, cx - r, my, selc, selw) + ln(cx + r, my, x + w, my, selc, selw)
         + '<rect x="' + (cx - r) + '" y="' + (my - r) + '" width="' + 2 * r + '" height="' + 2 * r + '" fill="' + sfc + '" stroke="' + selc + '" stroke-width="' + selw + '"/>'
@@ -852,7 +852,7 @@ function blockSymbol(b, d, selc, selw, sfc, tx, tx3) {
   }
   return s;
 }
-// On-screen vertical half-extent of a (possibly rotated) block — 90°/270°
+// On-screen vertical half-extent of a (possibly rotated) block: 90°/270°
 // swap w/h, since that's what the rotated bounding box actually looks like.
 // Used to place the label directly below the block on screen no matter its
 // rotation, without needing to know which way it's turned.
@@ -861,9 +861,9 @@ function screenHalfHeight(d, rot) {
   return (r === 90 ? d.w : d.h) / 2;
 }
 // Label (name #id + param summary) is rendered SEPARATELY from the rotated
-// symbol <g> — plain unrotated text at an absolute world position, so it
+// symbol <g>: plain unrotated text at an absolute world position, so it
 // always reads horizontally instead of turning sideways with the symbol
-// (auto-layout rotates line/load/src/etc. 90° in top-to-bottom mode — SPEC
+// (auto-layout rotates line/load/src/etc. 90° in top-to-bottom mode: SPEC
 // §3). Wrapped in its own data-blk group so clicking/dragging the label still
 // selects/moves the block, same as clicking the symbol.
 function blockLabel(b, d, tx, tx3) {
@@ -943,13 +943,74 @@ function flushDragRender() {
   render();
 }
 
+// How close a pointer must come to a terminal, in CSS PIXELS, to grab it.
+//
+// The drawn terminal is a 5.5 user-unit circle, and user units shrink with the
+// camera: at 375px wide the canvas renders at scale 0.507, so that circle is a
+// 5.6 by 5.6 CSS pixel target. WCAG 2.5.8 asks for 24 by 24. Wiring on a phone
+// was a coin flip.
+//
+// Fixing it by enlarging the drawn circle does not work, because at that zoom a
+// whole block is only 23 by 13 CSS px: a circle big enough to hit reliably
+// would cover its own block and its neighbours. So the hit test is separated
+// from the drawing. The circles stay 5.5 units and this searches for the
+// nearest terminal in screen space, which also resolves ties unambiguously.
+const TERM_HIT_CSS = { touch: 22, pen: 16, mouse: 8 };
+// Nearest terminal to a pointer event, or null. Two guards stop it eating the
+// interactions around it:
+//   1. it must be inside the pointer-type radius, converted to user units, and
+//   2. INSIDE a block's own box, it must be nearer the terminal than the
+//      block's centre, so the middle of a block still selects and drags it.
+//
+// Rule 2 is deliberately scoped to the inside of the box. Applying it
+// everywhere capped the usable target at half the terminal-to-centre distance,
+// which measured 14px on a phone: the rule, not the radius, was the binding
+// constraint. Outside the box there is no block-body interaction to protect,
+// only panning and rubber-band select, and reaching a nearby terminal is what
+// someone aiming at one actually wants. The 6-unit floor covers blocks whose
+// terminal sits near their own centre, where rule 2 would be a coin flip.
+// setPointerCapture throws NotFoundError if the pointer is already gone by the
+// time the handler runs (a fast tap, a synthetic event, a pointer the browser
+// has already released). Unguarded it aborted the rest of the handler, which
+// includes the render() that draws the selection the user just made, leaving
+// the canvas showing stale state. The plot handlers already guarded this; the
+// schematic did not.
+function capture(e) {
+  try { cnv.setPointerCapture(e.pointerId); } catch (err) { /* pointer already released; drag still tracked by listeners */ }
+}
+function nearestTerminal(e) {
+  const r = cnv.getBoundingClientRect();
+  if (!r.width) return null;
+  const perCss = view.w / r.width; // user units per CSS pixel
+  const maxUser = (TERM_HIT_CSS[e.pointerType] || TERM_HIT_CSS.mouse) * perCss;
+  const pt = svgPt(e);
+  let best = null, bestD = Infinity;
+  S.blocks.forEach(b => {
+    const [cx, cy] = blockCenter(b);
+    const d0 = getDims(b);
+    const inside = pt.x >= b.x && pt.x <= b.x + d0.w && pt.y >= b.y && pt.y <= b.y + d0.h;
+    const dC = Math.hypot(pt.x - cx, pt.y - cy);
+    getTerms(b).forEach((t, ti) => {
+      const p = termPos(b, ti);
+      const d = Math.hypot(pt.x - p[0], pt.y - p[1]);
+      if (d > maxUser || d >= bestD) return;
+      if (inside && Math.hypot(p[0] - cx, p[1] - cy) > 6 && d >= dC) return; // block body wins
+      bestD = d; best = [b.id, ti];
+    });
+  });
+  return best;
+}
 cnv.addEventListener('pointerdown', e => {
   if (e.button !== 0) return; // ignore right/middle-click: don't start drags or wire terminals; the browser context menu is suppressed separately
   const t = e.target; const pt = svgPt(e);
   const mod = e.shiftKey || e.ctrlKey;
   if (!t.dataset.wire) selWire = null; // any other click drops the wire selection
-  if (t.dataset.term) {
-    const parts = t.dataset.term.split(',').map(Number);
+  // Proximity first, and it subsumes the exact-hit case: landing dead on a
+  // terminal is simply distance ~0. Skipped while modifier-clicking, which is
+  // multi-select and never means "start a wire".
+  const near = mod ? null : nearestTerminal(e);
+  if (near) {
+    const parts = near;
     if (!S.wireFrom) S.wireFrom = parts;
     else {
       if (!(S.wireFrom[0] === parts[0] && S.wireFrom[1] === parts[1])) { pushHistory(); touchModel(); S.wires.push({ a: S.wireFrom, b: parts }); }
@@ -970,17 +1031,17 @@ cnv.addEventListener('pointerdown', e => {
     if (!S.sel.includes(id)) S.sel = [id];
     const bases = new Map(S.sel.map(sid => { const sb = S.blocks.find(x => x.id === sid); return [sid, { x: sb.x, y: sb.y }]; }));
     drag = { type: 'block', ids: S.sel.slice(), bases, sx: pt.x, sy: pt.y, preSnap: snapshot() };
-    cnv.setPointerCapture(e.pointerId);
+    capture(e);
     render(); showProps(); return;
   }
   if (mod) {
     drag = { type: 'rubber', x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y };
-    cnv.setPointerCapture(e.pointerId);
+    capture(e);
     render(); return;
   }
   S.sel = []; S.wireFrom = null;
   drag = { type: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y };
-  cnv.setPointerCapture(e.pointerId);
+  capture(e);
   render(); showProps();
 });
 cnv.addEventListener('pointermove', e => {
@@ -1252,6 +1313,13 @@ const PLOT_RESERVE = 210;
 function autoCanvasHeight() {
   const wrap = document.querySelector('.cnvwrap');
   if (!wrap || !window.innerHeight) return null;
+  // Narrow screens opt out and keep the stylesheet's height. Reserving plot
+  // space only pays when the canvas and a plot can share one screen, and on a
+  // phone they cannot: with 470px of chrome above it this drove the canvas to
+  // its 280px floor to win 55px of plot, and then a bottom sheet took 129px of
+  // that 280. Scrolling to the plots is normal on a phone, and revealPlots()
+  // does it automatically when a run finishes.
+  if (window.innerWidth <= 760) return null;
   const top = wrap.getBoundingClientRect().top + window.scrollY;
   const h = Math.round(window.innerHeight - top - PLOT_RESERVE);
   // Floor at 280 rather than CNV_H_MIN: 200px is a legitimate thing to drag
@@ -1389,23 +1457,23 @@ function showProps() {
   // Right rail: the block's physical description, then the equations /
   // equivalent-circuit science panel (the reference side).
   let sH = '';
-  if (b.type === 'bus') sH += '<span class="hint">Ties every wired tap to one node — a thick junction bar for decluttering multi-connection points (1 tap works too, as a named anchor). Its node voltage is plotted automatically — pick it in a plot\'s Signals list by name; AC vs DC is detected from the circuit. Extend via # taps / length. Rotate with R for a vertical bus. Set V base to the bus\'s nominal voltage (in the circuit\'s PH/LL convention) so the power-flow annotation shows correct per-unit voltage; leave it 0 to use the slack bus voltage as the base (fine for single-voltage circuits, wrong behind a transformer).</span>';
-  if (b.type === 'gfm') sH += '<span class="hint">AC/DC inverter. Runs 3-phase, in 1-ph mode, or on a single-phase lateral (behind a Phase Tap), one code path. The AC current limiter (I ac max) is 3-phase only: on a single-phase inverter it is refused, since single-phase P/Q take a full cycle to measure and cannot hold current through a fault. mode=0: grid-forming droop (f falls with P via mp, E falls with Q via mq) — sets its own V/f, can island. mode=1: grid-following dispatch — PI-regulates toward the P0/Q0 setpoint instead (ki P/ki Q), assumes the network already sits near f0 (no PLL — needs a stiff source or another GFM to lock to). The bottom DC+ terminal is optional: wire it to a battery/DC bus and the inverter draws/delivers exactly the power its AC side measures (lossless, current-limited by I dc max); leave it unwired and it behaves as an idealized AC-only source, as before. Its DC current is plotted automatically (Idc signal).</span>';
-  if (b.type === 'syncgen') sH += '<span class="hint">Classical synchronous generator, 3-ph mode only — round rotor, constant EMF behind Ra+Xd\' (Ld). Unlike GFM, frequency is a real dynamic state (swing equation: inertia H, damping D), not a droop line — it has genuine inertial response and will oscillate/settle after a disturbance, and multiple machines sharing a load split it via governor droop (Pm = Pm0 − Kgov·Δf; Kgov=0 = fixed mechanical power, no governor). AVR holds E via Q droop (mq/Q0), same form as GFM\'s. Frequency is plotted automatically (f signal) — the actual point of this block is watching it dip and recover. Classical model only: no subtransient reactances, saturation, or exciter dynamics.</span>';
+  if (b.type === 'bus') sH += '<span class="hint">Ties every wired tap to one node: a thick junction bar for decluttering multi-connection points (1 tap works too, as a named anchor). Its node voltage is plotted automatically: pick it in a plot\'s Signals list by name; AC vs DC is detected from the circuit. Extend via # taps / length. Rotate with R for a vertical bus. Set V base to the bus\'s nominal voltage (in the circuit\'s PH/LL convention) so the power-flow annotation shows correct per-unit voltage; leave it 0 to use the slack bus voltage as the base (fine for single-voltage circuits, wrong behind a transformer).</span>';
+  if (b.type === 'gfm') sH += '<span class="hint">AC/DC inverter. Runs 3-phase, in 1-ph mode, or on a single-phase lateral (behind a Phase Tap), one code path. The AC current limiter (I ac max) is 3-phase only: on a single-phase inverter it is refused, since single-phase P/Q take a full cycle to measure and cannot hold current through a fault. mode=0: grid-forming droop (f falls with P via mp, E falls with Q via mq): sets its own V/f, can island. mode=1: grid-following dispatch: PI-regulates toward the P0/Q0 setpoint instead (ki P/ki Q), assumes the network already sits near f0 (no PLL: needs a stiff source or another GFM to lock to). The bottom DC+ terminal is optional: wire it to a battery/DC bus and the inverter draws/delivers exactly the power its AC side measures (lossless, current-limited by I dc max); leave it unwired and it behaves as an idealized AC-only source, as before. Its DC current is plotted automatically (Idc signal).</span>';
+  if (b.type === 'syncgen') sH += '<span class="hint">Classical synchronous generator, 3-ph mode only: round rotor, constant EMF behind Ra+Xd\' (Ld). Unlike GFM, frequency is a real dynamic state (swing equation: inertia H, damping D), not a droop line: it has genuine inertial response and will oscillate/settle after a disturbance, and multiple machines sharing a load split it via governor droop (Pm = Pm0 − Kgov·Δf; Kgov=0 = fixed mechanical power, no governor). AVR holds E via Q droop (mq/Q0), same form as GFM\'s. Frequency is plotted automatically (f signal): the actual point of this block is watching it dip and recover. Classical model only: no subtransient reactances, saturation, or exciter dynamics.</span>';
   if (b.type === 'pfc') sH += '<span class="hint">AC/DC bridge: left terminal = 3-ph AC in, right = DC+ out (return via ground). PI-regulated + current limit, unity-pf AC draw, UV shutdown. Put a cap on the DC bus. reverse=1 also allows DC→AC export (set its V ref below the DC source holding the bus). In 1-ph MODE the AC side is abstracted entirely (wire it to ground). On a single-phase LATERAL behind a Phase Tap (a different thing) the AC side IS modeled: it draws unity-pf single-phase current via a one-cycle voltage-phasor extraction, so its drawn power lags by up to a cycle during a transient, and the f param sets that window.</span>';
-  if (b.type === 'batt') sH += '<span class="hint">Bidirectional DC/DC with SOC (1-ph/DC side). Discharges to hold V ref when the bus sags (stops at SOC 0); charges at ≤ I charge whenever the bus sits above V ref (stops at SOC 100). Plot its SOC from the Signals picker. Capacity default is tiny on purpose — EMT runs are milliseconds, so a realistic Ah would look flat. Right terminal = DC+ out.</span>';
-  if (b.type === 'dcdc') sH += '<span class="hint">Dedicated bidirectional DC/DC converter — the typical way industry controls battery charge/discharge separately from the cell itself. Left = IN, right = OUT (regulated side). mode=0 CV: PI holds OUT at V ref. mode=1 CC: dispatches a fixed I set out of OUT (+ = IN→OUT, − = OUT→IN), no PI — a direct current/power dispatch, e.g. constant-current charging. Either side needs a cap or another regulating element to hold its voltage (a bare current source can\'t stabilize a node by itself). Wire IN to a battery at its own native voltage to step it to a different bus voltage under explicit control.</span>';
-  if (b.type === 'pv') sH += '<span class="hint">PV array with an embedded DC/DC + MPPT (1-ph/DC side) — panel + converter + controller as one block, generation-only (never absorbs). Its internal operating voltage (Vop) hunts around the max-power point via real Perturb & Observe, decoupled from whatever voltage the DC bus is actually at — plot Vop from the Signals picker to watch it hunt. G is a static irradiance knob (W/m², 1000 = full sun) scaling Isc/Impp linearly; Voc/Vmpp don\'t shift with irradiance in this lightweight model. Needs a cap or another regulating element (e.g. a battery) on its bus to hold a voltage.</span>';
+  if (b.type === 'batt') sH += '<span class="hint">Bidirectional DC/DC with SOC (1-ph/DC side). Discharges to hold V ref when the bus sags (stops at SOC 0); charges at ≤ I charge whenever the bus sits above V ref (stops at SOC 100). Plot its SOC from the Signals picker. Capacity default is tiny on purpose: EMT runs are milliseconds, so a realistic Ah would look flat. Right terminal = DC+ out.</span>';
+  if (b.type === 'dcdc') sH += '<span class="hint">Dedicated bidirectional DC/DC converter: the typical way industry controls battery charge/discharge separately from the cell itself. Left = IN, right = OUT (regulated side). mode=0 CV: PI holds OUT at V ref. mode=1 CC: dispatches a fixed I set out of OUT (+ = IN→OUT, − = OUT→IN), no PI: a direct current/power dispatch, e.g. constant-current charging. Either side needs a cap or another regulating element to hold its voltage (a bare current source can\'t stabilize a node by itself). Wire IN to a battery at its own native voltage to step it to a different bus voltage under explicit control.</span>';
+  if (b.type === 'pv') sH += '<span class="hint">PV array with an embedded DC/DC + MPPT (1-ph/DC side): panel + converter + controller as one block, generation-only (never absorbs). Its internal operating voltage (Vop) hunts around the max-power point via real Perturb & Observe, decoupled from whatever voltage the DC bus is actually at: plot Vop from the Signals picker to watch it hunt. G is a static irradiance knob (W/m², 1000 = full sun) scaling Isc/Impp linearly; Voc/Vmpp don\'t shift with irradiance in this lightweight model. Needs a cap or another regulating element (e.g. a battery) on its bus to hold a voltage.</span>';
   if (b.type === 'cpl') sH += '<span class="hint">DC block (1-ph mode). Draws P/v; sheds load below UVLO.</span>';
   if (b.type === 'line' && +b.params.C > 0) sH += '<span class="hint">π-equivalent line: series R+L plus C split evenly as a shunt cap to ground at EACH end (the standard nominal-π medium-line model). Not supported together with mutual coupling (Rm/Lm), set one to 0. Its plotted signal is still the series current, same as before; shunt charging currents aren\'t separately exposed.</span>';
   if (b.type === 'line' && +b.params.C <= 0 && isCoupled(b)) sH += '<span class="hint">Series R-L line WITH 3-phase mutual coupling (Rm/Lm). The three phases share one 3×3 L/R matrix (a single coupled element spans all phases), so only balanced currents see the positive-sequence impedance Z1 = (Rs − Rm) + jω(Ls − Lm). Not supported together with the π shunt (C>0), set one to 0. Mutually-coupled parallel circuits are not modeled (one coupling per block).</span>';
   if (b.type === 'line' && +b.params.C <= 0 && !isCoupled(b)) sH += '<span class="hint">Series R-L line (lumped), the default when C=0 and no mutuals. Trapezoidal companion; accurate below a few kHz. For longer or sharper studies use the π option (set C>0; the glyph then shows two shunt caps plus a π label) or the traveling-wave TW Line block. Plotted signal is the series current.</span>';
-  if (b.type === 'rlc') sH += '<span class="hint">Series R-L-C branch (all three carry the same current, no internal node). Set any of R, L, C to -1 to drop it from the chain (a wire in its place) — e.g. L=-1,C=-1 is a plain resistor; R=-1,L=-1 is a plain capacitor. R also accepts 0 for "no resistor" (same effect); L and C must use -1 specifically, since 0 already means something else for them (0 H is a harmless wire, but 0 µF is an open circuit — the opposite of absent). Setting all three to -1 collapses the branch to a near-zero-impedance short rather than erroring.</span>';
-  if (b.type === 'rlcp') sH += '<span class="hint">Parallel R||L||C branch (all three share one voltage, independent currents). Sentinel convention is INVERSE of Series RLC: use -1 to drop R or L (absent, no contribution). R=0 and L=0 are REAL SHORTS in parallel — they do NOT mean absent. C accepts -1 or 0 (both give zero admittance). Setting all three absent gives a genuine open branch, not an error.</span>';
-  if (b.type === 'pq') sH += '<span class="hint">Constant P+Q load (AC) — the standard power-flow load model, unlike Load R\'s fixed impedance. Both P and Q stay constant as the bus voltage moves, via an RMS-tracked estimate (meas filter) rather than the instantaneous voltage (which would blow up at AC zero-crossings). Q>0 = lagging/inductive, Q<0 = leading/capacitive. f should match the circuit\'s actual frequency — it sizes the internal quarter-cycle delay used to derive Q, so it\'s only exact for a steady sinusoid at that frequency. Sheds below UVLO (vmin).</span>';
+  if (b.type === 'rlc') sH += '<span class="hint">Series R-L-C branch (all three carry the same current, no internal node). Set any of R, L, C to -1 to drop it from the chain (a wire in its place): e.g. L=-1,C=-1 is a plain resistor; R=-1,L=-1 is a plain capacitor. R also accepts 0 for "no resistor" (same effect); L and C must use -1 specifically, since 0 already means something else for them (0 H is a harmless wire, but 0 µF is an open circuit: the opposite of absent). Setting all three to -1 collapses the branch to a near-zero-impedance short rather than erroring.</span>';
+  if (b.type === 'rlcp') sH += '<span class="hint">Parallel R||L||C branch (all three share one voltage, independent currents). Sentinel convention is INVERSE of Series RLC: use -1 to drop R or L (absent, no contribution). R=0 and L=0 are REAL SHORTS in parallel: they do NOT mean absent. C accepts -1 or 0 (both give zero admittance). Setting all three absent gives a genuine open branch, not an error.</span>';
+  if (b.type === 'pq') sH += '<span class="hint">Constant P+Q load (AC): the standard power-flow load model, unlike Load R\'s fixed impedance. Both P and Q stay constant as the bus voltage moves, via an RMS-tracked estimate (meas filter) rather than the instantaneous voltage (which would blow up at AC zero-crossings). Q>0 = lagging/inductive, Q<0 = leading/capacitive. f should match the circuit\'s actual frequency: it sizes the internal quarter-cycle delay used to derive Q, so it\'s only exact for a steady sinusoid at that frequency. Sheds below UVLO (vmin).</span>';
   if (b.type === 'fault') sH += '<span class="hint">Applies R fault to ground at t on; clears at first current zero after t off (-1 = never clears).</span>';
-  if (b.type === 'tap') sH += '<span class="hint">Single-phase lateral tap: terminal 0 is the 3-phase side, terminal 1 the single-phase side, carrying ONLY the selected phase. Everything downstream of terminal 1 (line, load, transformer, breaker, fault) becomes single-phase automatically and returns through ground as its neutral, so a lateral is a phase-to-neutral connection: its voltage parameters are read as phase values even in LL convention. Supported on a lateral: AC source, line (no shunt C or mutuals), series/parallel RLC, cap, breaker, fault, PQ/ZIP load, arrester, a non-saturable 1-ph transformer, plus overcurrent relay, shunt controller and PFC rectifier. Traveling-wave and FD lines are not (they model long transmission circuits, not laterals), nor is a π-line or a saturable transformer. Only a Phase Tap may join a 3-phase node to a lateral — any other block bridging the two is an error. 3-phase mode only (in 1-ph mode it is a plain connector). Power flow is positive-sequence and cannot represent an unbalanced lateral, so it refuses to run on a circuit containing one; run the EMT solve directly. Connector R is a small series resistance, not a feeder impedance — leave it small and put the real impedance in a line block.</span>';
-  if (b.type === 'brk') sH += '<span class="hint">t open = -1 disables opening. Opening arms at t open; each pole clears at its first current zero. init 1 = starts closed. # operations > 1 adds a reclosing sequence: after operation N clears, operation N+1\'s t close/t open take over (each op\'s own t open = -1 means "stay closed from here on"). Don\'t also target this breaker with a relay/vsw brkId while # operations > 1 — both would drive the same close/open state.</span>';
+  if (b.type === 'tap') sH += '<span class="hint">Single-phase lateral tap: terminal 0 is the 3-phase side, terminal 1 the single-phase side, carrying ONLY the selected phase. Everything downstream of terminal 1 (line, load, transformer, breaker, fault) becomes single-phase automatically and returns through ground as its neutral, so a lateral is a phase-to-neutral connection: its voltage parameters are read as phase values even in LL convention. Supported on a lateral: AC source, line (no shunt C or mutuals), series/parallel RLC, cap, breaker, fault, PQ/ZIP load, arrester, a non-saturable 1-ph transformer, plus overcurrent relay, shunt controller and PFC rectifier. Traveling-wave and FD lines are not (they model long transmission circuits, not laterals), nor is a π-line or a saturable transformer. Only a Phase Tap may join a 3-phase node to a lateral: any other block bridging the two is an error. 3-phase mode only (in 1-ph mode it is a plain connector). Power flow is positive-sequence and cannot represent an unbalanced lateral, so it refuses to run on a circuit containing one; run the EMT solve directly. Connector R is a small series resistance, not a feeder impedance: leave it small and put the real impedance in a line block.</span>';
+  if (b.type === 'brk') sH += '<span class="hint">t open = -1 disables opening. Opening arms at t open; each pole clears at its first current zero. init 1 = starts closed. # operations > 1 adds a reclosing sequence: after operation N clears, operation N+1\'s t close/t open take over (each op\'s own t open = -1 means "stay closed from here on"). Don\'t also target this breaker with a relay/vsw brkId while # operations > 1: both would drive the same close/open state.</span>';
   if (b.type === 'src') sH += '<span class="hint">AC voltage source: ideal sinusoidal EMF behind series Rs (Thevenin, Norton-injected), the default slack/grid source. V rms is the phase magnitude (or line, per the V: PH/LL convention); Rs is the internal impedance. No dynamics, so it is a stiff source: use it as a slack or pair it with a machine or GFM for frequency. Left terminal is the return (ground), right is the live conductor. Works in 1-ph and 3-ph.</span>';
   if (b.type === 'tline') sH += '<span class="hint">Traveling-wave line (TW = traveling-wave), the Bergeron method (Dommel 1969, the EMTP founding technique): lossless distributed LC where a wave entering one end arrives at the other exactly one travel time τ later, reflects off mismatches, and doubles at an open end. Z is the surge impedance; R is total series resistance lumped the standard way (R/4 at each end, R/2 in the middle). The two ends decouple in the matrix (diagonal-only stamps; they talk only through delayed history). Use for switching-surge and traveling-wave studies where the lumped line or π blocks smear wavefronts. τ must be ≥ dt; R=0 gives the classic lossless form.</span>';
   if (b.type === 'fdline') sH += '<span class="hint">Frequency-dependent line (FD = frequency-dependent), JMarti class (1982): characteristic impedance and attenuation are rational functions of frequency, so high-frequency wavefronts attenuate and disperse while the fundamental passes nearly unscathed (the real behavior of lines with ground return). First-order fitting only (one pole each for Zc and H); set Zlf=Zh and att=1 with a fast pole to degenerate to the Bergeron TW line. Ships canned typical parameters, no fitting from geometry. Use when the Bergeron assumption of constant Zc and attenuation is too crude.</span>';
@@ -3851,6 +3919,44 @@ function toggleAbout() {
   syncCanvasHeight(); // the row appearing/disappearing moves the canvas top
   onCanvasResize(); // ...and therefore changes its aspect
 }
+// "More" reveals the collapsed toolbar clusters on narrow screens. Not
+// persisted: unlike the rail toggles this is a peek at controls you are about
+// to use once, not a layout preference, and leaving it latched would put the
+// phone back to the five-row toolbar it exists to avoid.
+function toggleMore() {
+  const emt = document.querySelector('.emt');
+  const btn = document.getElementById('morebtn');
+  if (!emt) return;
+  const on = !emt.classList.contains('more');
+  emt.classList.toggle('more', on);
+  if (btn) btn.classList.toggle('on', on);
+  syncCanvasHeight(); onCanvasResize(); // the toolbar grew or shrank
+}
+// The sticky Run mirrors whichever action is live: Run normally, Stop while a
+// run is in flight, so a long run can be cancelled from the plots without
+// scrolling back to the toolbar.
+let fabRunning = false;
+function fabAction() { if (fabRunning) stopSim(); else runEMTLive(); }
+function syncFab(running) {
+  fabRunning = !!running;
+  const f = document.getElementById('fabrun');
+  if (!f) return;
+  f.classList.toggle('stop', fabRunning);
+  f.textContent = fabRunning ? '■ Stop' : '▶ Run';
+  f.title = fabRunning ? 'Stop the running simulation' : 'Run the simulation';
+}
+// Show it only once the real Run button has scrolled out of view. An
+// IntersectionObserver rather than a scroll handler: this has to be correct
+// while the page is also being scrolled by revealPlots(), and a scroll listener
+// firing during a smooth scroll is exactly where that gets fiddly.
+function bindFab() {
+  const btn = document.getElementById('runbtn');
+  const emt = document.querySelector('.emt');
+  if (!btn || !emt || typeof IntersectionObserver === 'undefined') return;
+  new IntersectionObserver(es => {
+    emt.classList.toggle('fab', !es[0].isIntersecting);
+  }, { threshold: 0 }).observe(btn);
+}
 // Numerics popover (time step, plot step, flow arrows), anchored under its gear
 // button. Not persisted: it is a transient panel, not a layout preference.
 function toggleSimAdv(ev) {
@@ -4069,22 +4175,49 @@ function buildExamplesMenu() {
 // Startup: honour ?example=<name>[&pf=1][&run=1], else the built-in Demo.
 // The name is matched against the embedded keys and nothing else, so the
 // parameter can never reach a path, a URL, or the filesystem.
+// The case a visitor lands on with no ?example= in the URL.
+//
+// This used to be loadDemo(): a source, a breaker, a line and a resistor, built
+// in code. It solved and plotted correctly, and the plot was a clean
+// energization step into a resistive load, which does not show what an EMT
+// solver is FOR. showcase.json is a real transient: a phase-A-to-ground fault
+// at 55 ms clearing at 85 ms, seen through a 2:1 transformer, with a GFM droop
+// inverter dispatching into the secondary bus. Same first ten seconds of the
+// visit, a far better answer to "what does this thing do".
+//
+// loadDemo() stays as the fallback. It needs no data beyond its own code, so it
+// is the one thing that still works if the embedded examples are ever missing
+// or malformed, and a landing page that renders nothing is the worst outcome
+// here.
+const LANDING_EXAMPLE = 'showcase';
+function loadLanding() {
+  if (!Object.prototype.hasOwnProperty.call(EXAMPLES, LANDING_EXAMPLE)
+      || !loadExampleByName(LANDING_EXAMPLE)) { loadDemo(); return; }
+  history = []; future = []; updateUndoButtons(); // arriving is not a user edit
+  // The file carries sim.pfinit, which applyCircuit has already put on the
+  // checkbox, and runEMTLive() solves the power flow itself when it is set. So
+  // this is just a run, not a run plus a separate PF step.
+  setTimeout(runEMTLive, 400);
+}
 function bootFromUrl() {
   let p;
   try { p = new URLSearchParams(location.search); } catch (e) { p = null; }
   const want = p && p.get('example');
   if (!want || !Object.prototype.hasOwnProperty.call(EXAMPLES, want)) {
     if (want) {
-      loadDemo(false); // keep the message below readable
-      document.getElementById('stat').textContent =
-        'No such example: ' + want + '. Showing the Demo circuit instead. '
-        + 'Pick one from the Examples menu.';
+      // The complaint now lives in the notice band, which survives the landing
+      // case's auto-run. It used to go on the status line, which meant the run
+      // had to be suppressed to keep it readable; that is no longer true, so a
+      // bad link lands on something working instead of a bare circuit.
+      showError('No such example: "' + want + '". Showing ' + LANDING_EXAMPLE
+        + ' instead. Pick another from the Examples menu.', true); // survives the landing run
+      loadLanding();
       return;
     }
-    loadDemo();
+    loadLanding();
     return;
   }
-  if (!loadExampleByName(want)) { loadDemo(); return; }
+  if (!loadExampleByName(want)) { loadLanding(); return; }
   history = []; future = []; updateUndoButtons(); // arriving via a link is not a user edit
   const on = (k) => { const v = p.get(k); return v !== null && v !== '0' && v !== 'false'; };
   if (on('pf')) { try { solvePF(); } catch (e) { console.warn('[deeplink] pf:', e); } }
@@ -4678,7 +4811,7 @@ function clearYZoom(pl) {
 function updateZoomInfo() {
   const el = document.getElementById('zoominfo'), btn = document.getElementById('zoomresetbtn');
   const y = hasYZoom();
-  if (el) el.textContent = (tZoom ? 'Zoomed: ' + tZoom.t0.toFixed(1) + '–' + tZoom.t1.toFixed(1) + ' ms' : '')
+  if (el) el.textContent = (tZoom ? 'Zoomed: ' + tZoom.t0.toFixed(1) + ' to ' + tZoom.t1.toFixed(1) + ' ms' : '')
     + (y ? (tZoom ? ' + value' : 'Zoomed: value') : '');
   if (btn) btn.disabled = !tZoom && !y;
 }
@@ -4960,8 +5093,8 @@ function drawOnePlot(pl, dark) {
   leg.innerHTML = series.length
     ? series.map(s => '<span style="color:' + s.color + '">■</span> ' + escAttr(seriesLabel(s))).join(' &nbsp; ')
       + (hidden > 0 ? ' &nbsp; <span style="opacity:.75">+ ' + hidden + ' more not shown (auto plots cap at '
-        + AUTO_MAX + ' — use “Signals” to pick)</span>' : '')
-    : 'No signals — click “Signals” to add some.';
+        + AUTO_MAX + ': use “Signals” to pick)</span>' : '')
+    : 'No signals: click “Signals” to add some.';
 }
 // '' (not 'A'/'B'/'C'/'DC') for a signal that isn't tied to any one phase —
 // a 3-phase branch's total P/Q (SPEC §3): reported as one aggregate value,
@@ -4980,7 +5113,12 @@ function phaseLabel(d) { return d.dc ? 'DC' : (d.phase == null ? '' : PH_LBL[d.p
 // stays until it is dismissed or replaced. Never truncate here: the second half
 // of "...set Fov and Fuv to 0, or place this relay on a full 3-phase node" is
 // the half that tells you what to do.
-function setNotice(msg, level) {
+// `sticky` marks a notice that a later successful run must NOT retract, because
+// it is not a claim about whether the circuit runs. The case that forced this:
+// a bad ?example= link complains and then lands on the working landing case, so
+// the run that follows would clear the very message explaining the redirect.
+// Only an explicit dismiss clears a sticky notice.
+function setNotice(msg, level, sticky) {
   const box = document.getElementById('notice');
   const lab = document.getElementById('noticelab');
   const txt = document.getElementById('noticemsg');
@@ -4988,14 +5126,19 @@ function setNotice(msg, level) {
   txt.textContent = msg;
   if (lab) lab.textContent = level === 'warn' ? 'Warning' : 'Cannot run this circuit';
   box.className = 'notice on ' + (level === 'warn' ? 'warn' : 'err');
+  box.dataset.sticky = sticky ? '1' : '';
   syncCanvasHeight(); onCanvasResize(); // the band changes the canvas top
 }
-function showError(msg) { setNotice(msg, 'err'); }
-function showWarn(msg) { setNotice(msg, 'warn'); }
-function clearNotice() {
+function showError(msg, sticky) { setNotice(msg, 'err', sticky); }
+function showWarn(msg, sticky) { setNotice(msg, 'warn', sticky); }
+// force=true is the Dismiss button and anything else the user drove directly.
+// force=false (the default, used at the start of a run) leaves sticky notices.
+function clearNotice(force) {
   const box = document.getElementById('notice');
   if (!box || !box.classList.contains('on')) return;
+  if (!force && box.dataset.sticky === '1') return;
   box.className = 'notice';
+  box.dataset.sticky = '';
   syncCanvasHeight(); onCanvasResize();
 }
 
@@ -5042,7 +5185,7 @@ function showCursor(pl, c, xCss) {
   series.forEach(s => {
     const v = s.samples[bi];
     h += '<span class="pr-s"><span class="pr-sw" style="background:' + s.color + '"></span>'
-      + escAttr(seriesLabel(s)) + ' <b>' + (v === undefined ? '—' : sciNum(v, 4)) + '</b></span>';
+      + escAttr(seriesLabel(s)) + ' <b>' + (v === undefined ? 'n/a' : sciNum(v, 4)) + '</b></span>';
   });
   rd.innerHTML = h;
   rd.style.display = 'block';
@@ -5396,6 +5539,7 @@ function setRunning(running) {
   const runBtn = document.getElementById('runbtn'), stopBtn = document.getElementById('stopbtn');
   if (runBtn) runBtn.disabled = running;
   if (stopBtn) stopBtn.disabled = !running;
+  syncFab(running); // the sticky control mirrors whichever action is live
 }
 // Solve the steady-state power flow and annotate the canvas. Standalone action
 // (the ⚖ Power flow button); Run uses the same solve to initialize when "Init
@@ -5507,9 +5651,13 @@ function stopSim() {
 // the first plot is showing, and it scrolls the minimum distance rather than
 // centring the plot. Yanking the viewport out from under someone who is looking
 // at the schematic is worse than the problem being solved.
-const PLOT_VISIBLE_MIN = 90; // px of plot card that counts as "you can see it"
+const PLOT_VISIBLE_MIN = 120; // px of WAVEFORM that counts as "you can see it"
 function revealPlots() {
-  const card = document.querySelector('#plots .chartcard');
+  // Measure the plot canvas, not the card. The card's top 35px or so is its
+  // title row and its bottom is the legend, so aiming at the card left only
+  // 55px of actual trace on a phone: technically visible, not actually useful.
+  const card = document.querySelector('#plots canvas.plot')
+    || document.querySelector('#plots .chartcard');
   if (!card || typeof card.getBoundingClientRect !== 'function') return;
   const r = card.getBoundingClientRect();
   if (!r.height) return;
@@ -5563,6 +5711,8 @@ syncLibraryUI(); // apply persisted Library (left sidebar) preference before fir
 syncParamsUI(); // apply persisted Params-rail visibility preference
 syncScienceUI(); // apply persisted Science-rail visibility preference
 syncAboutUI(); // show the description unless this visitor dismissed it before
+syncFab(false); // sticky Run starts in its Run state
+bindFab(); // ...and appears only once the real Run button scrolls away
 buildExamplesMenu(); // populate the Examples picker from the embedded set
 bootFromUrl(); // ?example=<name> if present and known, else the Demo circuit
 onCanvasResize(); // sync the camera to the element's real aspect (VIEW0's 680:340 is only nominal)
