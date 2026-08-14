@@ -1313,6 +1313,13 @@ const PLOT_RESERVE = 210;
 function autoCanvasHeight() {
   const wrap = document.querySelector('.cnvwrap');
   if (!wrap || !window.innerHeight) return null;
+  // Narrow screens opt out and keep the stylesheet's height. Reserving plot
+  // space only pays when the canvas and a plot can share one screen, and on a
+  // phone they cannot: with 470px of chrome above it this drove the canvas to
+  // its 280px floor to win 55px of plot, and then a bottom sheet took 129px of
+  // that 280. Scrolling to the plots is normal on a phone, and revealPlots()
+  // does it automatically when a run finishes.
+  if (window.innerWidth <= 760) return null;
   const top = wrap.getBoundingClientRect().top + window.scrollY;
   const h = Math.round(window.innerHeight - top - PLOT_RESERVE);
   // Floor at 280 rather than CNV_H_MIN: 200px is a legitimate thing to drag
@@ -5605,9 +5612,13 @@ function stopSim() {
 // the first plot is showing, and it scrolls the minimum distance rather than
 // centring the plot. Yanking the viewport out from under someone who is looking
 // at the schematic is worse than the problem being solved.
-const PLOT_VISIBLE_MIN = 90; // px of plot card that counts as "you can see it"
+const PLOT_VISIBLE_MIN = 120; // px of WAVEFORM that counts as "you can see it"
 function revealPlots() {
-  const card = document.querySelector('#plots .chartcard');
+  // Measure the plot canvas, not the card. The card's top 35px or so is its
+  // title row and its bottom is the legend, so aiming at the card left only
+  // 55px of actual trace on a phone: technically visible, not actually useful.
+  const card = document.querySelector('#plots canvas.plot')
+    || document.querySelector('#plots .chartcard');
   if (!card || typeof card.getBoundingClientRect !== 'function') return;
   const r = card.getBoundingClientRect();
   if (!r.height) return;

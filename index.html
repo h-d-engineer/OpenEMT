@@ -286,12 +286,29 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
   .emt .library{width:188px}
   .emt.lib .props{left:204px}
 }
+/* Narrow screens: the three drawers become one bottom sheet.
+   As side rails they were unusable here. On a 345px canvas the science rail
+   covered 70% of the width, params 63% and the library 55%, so the panel about
+   a block hid the block, and with the Library open the params rail reached
+   380px on a 375px viewport and gave the whole page a horizontal scrollbar.
+   Full-width and bottom-anchored, capped at 46% so the schematic keeps the top
+   half, is the shape that actually fits a phone.
+   Only one can occupy the slot, so there is a priority: Library (you are
+   placing a block) beats Params (you are editing one) beats Science (you are
+   reading about one). Each is already a labelled toolbar toggle, so switching
+   between them is the control the user already has. */
 @media(max-width:760px){
-  .emt .props{width:196px;padding:.45rem .6rem}
-  .emt .sci-rail{width:220px;padding:.45rem .6rem}
   #cnv{height:380px}
-  .emt .library{width:168px}
-  .emt.lib .props{left:184px}
+  .emt .props,.emt .sci-rail,.emt .library{
+    left:8px;right:8px;width:auto;top:auto;bottom:8px;
+    max-height:46%;padding:.5rem .7rem;border-radius:12px}
+  .emt.lib .props{left:8px}
+  .emt.lib .props,.emt.lib .sci-rail{display:none}
+  .emt.sel:not(.hideparam) .sci-rail{display:none}
+  /* The library lists blocks in a single column as a side rail; across the full
+     width that wastes the row, so it wraps into a grid instead. */
+  .emt .libitems{flex-direction:row;flex-wrap:wrap}
+  .emt .library .palitem{width:auto;flex:1 1 132px}
 }
 /* Science / formula panel (educational layer). Collapsible per-block physics
    + equations with live values and an inline equivalent-circuit SVG. */
@@ -9033,6 +9050,13 @@ const PLOT_RESERVE = 210;
 function autoCanvasHeight() {
   const wrap = document.querySelector('.cnvwrap');
   if (!wrap || !window.innerHeight) return null;
+  // Narrow screens opt out and keep the stylesheet's height. Reserving plot
+  // space only pays when the canvas and a plot can share one screen, and on a
+  // phone they cannot: with 470px of chrome above it this drove the canvas to
+  // its 280px floor to win 55px of plot, and then a bottom sheet took 129px of
+  // that 280. Scrolling to the plots is normal on a phone, and revealPlots()
+  // does it automatically when a run finishes.
+  if (window.innerWidth <= 760) return null;
   const top = wrap.getBoundingClientRect().top + window.scrollY;
   const h = Math.round(window.innerHeight - top - PLOT_RESERVE);
   // Floor at 280 rather than CNV_H_MIN: 200px is a legitimate thing to drag
@@ -13325,9 +13349,13 @@ function stopSim() {
 // the first plot is showing, and it scrolls the minimum distance rather than
 // centring the plot. Yanking the viewport out from under someone who is looking
 // at the schematic is worse than the problem being solved.
-const PLOT_VISIBLE_MIN = 90; // px of plot card that counts as "you can see it"
+const PLOT_VISIBLE_MIN = 120; // px of WAVEFORM that counts as "you can see it"
 function revealPlots() {
-  const card = document.querySelector('#plots .chartcard');
+  // Measure the plot canvas, not the card. The card's top 35px or so is its
+  // title row and its bottom is the legend, so aiming at the card left only
+  // 55px of actual trace on a phone: technically visible, not actually useful.
+  const card = document.querySelector('#plots canvas.plot')
+    || document.querySelector('#plots .chartcard');
   if (!card || typeof card.getBoundingClientRect !== 'function') return;
   const r = card.getBoundingClientRect();
   if (!r.height) return;
