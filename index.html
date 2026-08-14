@@ -8663,13 +8663,74 @@ function flushDragRender() {
   render();
 }
 
+// How close a pointer must come to a terminal, in CSS PIXELS, to grab it.
+//
+// The drawn terminal is a 5.5 user-unit circle, and user units shrink with the
+// camera: at 375px wide the canvas renders at scale 0.507, so that circle is a
+// 5.6 by 5.6 CSS pixel target. WCAG 2.5.8 asks for 24 by 24. Wiring on a phone
+// was a coin flip.
+//
+// Fixing it by enlarging the drawn circle does not work, because at that zoom a
+// whole block is only 23 by 13 CSS px: a circle big enough to hit reliably
+// would cover its own block and its neighbours. So the hit test is separated
+// from the drawing. The circles stay 5.5 units and this searches for the
+// nearest terminal in screen space, which also resolves ties unambiguously.
+const TERM_HIT_CSS = { touch: 22, pen: 16, mouse: 8 };
+// Nearest terminal to a pointer event, or null. Two guards stop it eating the
+// interactions around it:
+//   1. it must be inside the pointer-type radius, converted to user units, and
+//   2. INSIDE a block's own box, it must be nearer the terminal than the
+//      block's centre, so the middle of a block still selects and drags it.
+//
+// Rule 2 is deliberately scoped to the inside of the box. Applying it
+// everywhere capped the usable target at half the terminal-to-centre distance,
+// which measured 14px on a phone: the rule, not the radius, was the binding
+// constraint. Outside the box there is no block-body interaction to protect,
+// only panning and rubber-band select, and reaching a nearby terminal is what
+// someone aiming at one actually wants. The 6-unit floor covers blocks whose
+// terminal sits near their own centre, where rule 2 would be a coin flip.
+// setPointerCapture throws NotFoundError if the pointer is already gone by the
+// time the handler runs (a fast tap, a synthetic event, a pointer the browser
+// has already released). Unguarded it aborted the rest of the handler, which
+// includes the render() that draws the selection the user just made, leaving
+// the canvas showing stale state. The plot handlers already guarded this; the
+// schematic did not.
+function capture(e) {
+  try { cnv.setPointerCapture(e.pointerId); } catch (err) { /* pointer already released; drag still tracked by listeners */ }
+}
+function nearestTerminal(e) {
+  const r = cnv.getBoundingClientRect();
+  if (!r.width) return null;
+  const perCss = view.w / r.width; // user units per CSS pixel
+  const maxUser = (TERM_HIT_CSS[e.pointerType] || TERM_HIT_CSS.mouse) * perCss;
+  const pt = svgPt(e);
+  let best = null, bestD = Infinity;
+  S.blocks.forEach(b => {
+    const [cx, cy] = blockCenter(b);
+    const d0 = getDims(b);
+    const inside = pt.x >= b.x && pt.x <= b.x + d0.w && pt.y >= b.y && pt.y <= b.y + d0.h;
+    const dC = Math.hypot(pt.x - cx, pt.y - cy);
+    getTerms(b).forEach((t, ti) => {
+      const p = termPos(b, ti);
+      const d = Math.hypot(pt.x - p[0], pt.y - p[1]);
+      if (d > maxUser || d >= bestD) return;
+      if (inside && Math.hypot(p[0] - cx, p[1] - cy) > 6 && d >= dC) return; // block body wins
+      bestD = d; best = [b.id, ti];
+    });
+  });
+  return best;
+}
 cnv.addEventListener('pointerdown', e => {
   if (e.button !== 0) return; // ignore right/middle-click: don't start drags or wire terminals; the browser context menu is suppressed separately
   const t = e.target; const pt = svgPt(e);
   const mod = e.shiftKey || e.ctrlKey;
   if (!t.dataset.wire) selWire = null; // any other click drops the wire selection
-  if (t.dataset.term) {
-    const parts = t.dataset.term.split(',').map(Number);
+  // Proximity first, and it subsumes the exact-hit case: landing dead on a
+  // terminal is simply distance ~0. Skipped while modifier-clicking, which is
+  // multi-select and never means "start a wire".
+  const near = mod ? null : nearestTerminal(e);
+  if (near) {
+    const parts = near;
     if (!S.wireFrom) S.wireFrom = parts;
     else {
       if (!(S.wireFrom[0] === parts[0] && S.wireFrom[1] === parts[1])) { pushHistory(); touchModel(); S.wires.push({ a: S.wireFrom, b: parts }); }
@@ -8690,17 +8751,17 @@ cnv.addEventListener('pointerdown', e => {
     if (!S.sel.includes(id)) S.sel = [id];
     const bases = new Map(S.sel.map(sid => { const sb = S.blocks.find(x => x.id === sid); return [sid, { x: sb.x, y: sb.y }]; }));
     drag = { type: 'block', ids: S.sel.slice(), bases, sx: pt.x, sy: pt.y, preSnap: snapshot() };
-    cnv.setPointerCapture(e.pointerId);
+    capture(e);
     render(); showProps(); return;
   }
   if (mod) {
     drag = { type: 'rubber', x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y };
-    cnv.setPointerCapture(e.pointerId);
+    capture(e);
     render(); return;
   }
   S.sel = []; S.wireFrom = null;
   drag = { type: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y };
-  cnv.setPointerCapture(e.pointerId);
+  capture(e);
   render(); showProps();
 });
 cnv.addEventListener('pointermove', e => {
