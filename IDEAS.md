@@ -485,6 +485,24 @@ demo is a better first impression; fix where its output lands), and anything
 touching the solver (every item here lives in `src/ui.js` and `src/shell.html`,
 so the API and MCP frontends are unaffected).
 
+## Shipped examples
+
+- **`ieee_harmonics_14bus.json` power-flows but its EMT run is singular.**
+  Found 2026-08-14 by running all 11 shipped examples end to end; 10 solve, this
+  one does not, and it fails identically on the deployed build so it predates
+  the usability work. The app diagnoses itself exactly: `Xfmr 3ph #67` is a
+  `Yd11` whose delta side (BUS 8) carries only current-source blocks (`pq`,
+  `probe`, `bus`), all stamped G = 0, so nothing on that side conducts to
+  ground and the winding set is genuinely unreferenced. That is the documented
+  isolated-secondary limit (CLAUDE.md, SPEC section 5 item 4), not a solver bug,
+  and the positive-sequence power flow has no such node which is why the
+  smoke-test PF check passes. But the example ships, the README lists it, and a
+  visitor who opens it gets an error, so one of three things should happen:
+  ground the delta side (an `rlc`/`rlcp` shunt or a grounded winding), change
+  #67 to `Yy0`, or mark the case power-flow-only in the README table. Which one
+  is a modelling decision, not a doc fix, which is why it is parked here rather
+  than patched.
+
 ## Auto-layout follow-ups
 
 - **Teach `busAwareLayout()` to transpose for top-to-bottom.** It currently has
