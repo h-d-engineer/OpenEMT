@@ -21,9 +21,25 @@
 :root{color-scheme:light dark}
 body{margin:0;padding:16px;background:#f0efe9;display:flex;justify-content:center}
 @media(prefers-color-scheme:dark){body{background:#1d1d1b}}
-.emt{--sfc:#ffffff;--sfc1:#f5f4ef;--bd:rgba(0,0,0,.18);--bds:rgba(0,0,0,.45);--tx:#1a1a18;--tx2:#52514e;--tx3:#898781;--acc:#2a78d6;
+/* Text tokens are chosen to clear WCAG AA (4.5:1) against EVERY surface they
+   render on, in BOTH themes, because all of this app's text is under 18.66px
+   and none of it qualifies for the 3:1 large-text allowance. The surfaces are
+   the body background, --sfc1 and --sfc; the worst pairing decides the token.
+   --tx3 used to be #898781 in both themes: 3.12:1 on the light body background
+   (which is where #stat puts every solver error), 3.26:1 on --sfc1, 3.79:1 on
+   the dark card. smoke_test.js recomputes these from this block and fails the
+   build below 4.5, so a "nicer looking" lighter grey cannot creep back in.
+
+   --acc is the accent as TEXT or a border. A filled chip needs its own pair,
+   --accf plus --acct, because one accent cannot serve both directions: in dark
+   mode a value light enough to read on the near-black ground (#5c9ce6, 4.77:1)
+   left white labels on the filled .on buttons at 2.86:1, which is how the
+   Library/Params/Science/Wide toggles and the zoom-mode chips shipped. Dark
+   therefore uses the conventional dark-UI filled chip (light fill, dark label)
+   while light keeps the dark fill with a white label. */
+.emt{--sfc:#ffffff;--sfc1:#f5f4ef;--bd:rgba(0,0,0,.18);--bds:rgba(0,0,0,.45);--tx:#1a1a18;--tx2:#52514e;--tx3:#6b6963;--acc:#2570cc;--accf:#2570cc;--acct:#ffffff;
 max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-size:13px;color:var(--tx);position:relative}
-@media(prefers-color-scheme:dark){.emt{--sfc:#2e2e2b;--sfc1:#232320;--bd:rgba(255,255,255,.22);--bds:rgba(255,255,255,.55);--tx:#eceae4;--tx2:#c3c2b7;--tx3:#898781;--acc:#5c9ce6}}
+@media(prefers-color-scheme:dark){.emt{--sfc:#2e2e2b;--sfc1:#232320;--bd:rgba(255,255,255,.22);--bds:rgba(255,255,255,.55);--tx:#eceae4;--tx2:#c3c2b7;--tx3:#9b9993;--acc:#5c9ce6;--accf:#6fa8e4;--acct:#1d1d1b}}
 .emt h1{font-size:18px;font-weight:600;margin:0 0 2px}
 .emt .sub{font-size:12px;color:var(--tx3);margin:0 0 12px}
 .emt .pal{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center}
@@ -89,7 +105,7 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
 .emt .axtog button{font-size:10px;width:20px;height:18px;padding:0;border:1px solid var(--bd);background:transparent;color:var(--tx3);cursor:pointer}
 .emt .axtog button:first-child{border-radius:5px 0 0 5px}
 .emt .axtog button:last-child{border-radius:0 5px 5px 0;border-left:none}
-.emt .axtog button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.emt .axtog button.on{background:var(--accf);color:var(--acct);border-color:var(--accf)}
 .emt .plotstoolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;text-transform:none;letter-spacing:normal}
 .emt .plotstoolbar button{font-size:11px;padding:3px 9px;background:transparent;color:var(--tx);border:1px solid var(--bds);border-radius:6px;cursor:pointer}
 .emt .plotstoolbar button:hover{background:var(--sfc1)}
@@ -112,7 +128,7 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
 .emt .zmode button:first-child{border-radius:6px 0 0 6px}
 .emt .zmode button:last-child{border-radius:0 6px 6px 0;border-left:none}
 .emt .zmode button:not(:first-child):not(:last-child){border-left:none}
-.emt .zmode button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.emt .zmode button.on{background:var(--accf);color:var(--acct);border-color:var(--accf)}
 .emt .hint{font-size:11px;color:var(--tx3);margin-top:4px}
 .emt .statusline{font-size:12px;color:var(--tx3)}
 .emt .statusrow{display:flex;gap:10px;align-items:baseline;margin-bottom:6px}
@@ -145,7 +161,7 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
 .emt .layoutdlg-btns{display:flex;gap:6px;justify-content:flex-end}
 .emt .layoutdlg-btns button{font-size:11px;padding:5px 12px;background:transparent;color:var(--tx);border:1px solid var(--bds);border-radius:6px;cursor:pointer}
 .emt .layoutdlg-btns button:hover{background:var(--sfc1)}
-.emt .layoutdlg-btns button.primary{background:var(--acc);color:#fff;border-color:var(--acc)}
+.emt .layoutdlg-btns button.primary{background:var(--accf);color:var(--acct);border-color:var(--accf)}
 .emt .palitem{display:flex;align-items:center;gap:6px;width:128px;font-size:12px;padding:4px 6px;
   background:transparent;color:var(--tx);border:1px solid var(--bds);border-radius:8px;cursor:grab;text-align:left}
 .emt .palitem:hover{background:var(--sfc1)}
@@ -199,12 +215,12 @@ max-width:1400px;width:100%;font-family:system-ui,-apple-system,sans-serif;font-
    (Blocks, Edit, File, Sim, Run) for scannability. */
 .emt .tcl{display:flex;align-items:center;gap:6px;flex-wrap:wrap;
   border:1px solid var(--bd);border-radius:9px;padding:3px 8px;background:var(--sfc1)}
-.emt .tcl-l{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;
+.emt .tcl-l{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;
   color:var(--tx3);margin-right:2px;white-space:nowrap}
-#widebtn.on{background:var(--acc);color:#fff;border-color:var(--acc)}
-#libbtn.on{background:var(--acc);color:#fff;border-color:var(--acc)}
-#parambtn.on{background:var(--acc);color:#fff;border-color:var(--acc)}
-#scibtn.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+#widebtn.on{background:var(--accf);color:var(--acct);border-color:var(--accf)}
+#libbtn.on{background:var(--accf);color:var(--acct);border-color:var(--accf)}
+#parambtn.on{background:var(--accf);color:var(--acct);border-color:var(--accf)}
+#scibtn.on{background:var(--accf);color:var(--acct);border-color:var(--accf)}
 @media(max-width:1100px){
   .emt .props{width:228px}
   .emt .sci-rail{width:288px}
