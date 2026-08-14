@@ -3919,6 +3919,44 @@ function toggleAbout() {
   syncCanvasHeight(); // the row appearing/disappearing moves the canvas top
   onCanvasResize(); // ...and therefore changes its aspect
 }
+// "More" reveals the collapsed toolbar clusters on narrow screens. Not
+// persisted: unlike the rail toggles this is a peek at controls you are about
+// to use once, not a layout preference, and leaving it latched would put the
+// phone back to the five-row toolbar it exists to avoid.
+function toggleMore() {
+  const emt = document.querySelector('.emt');
+  const btn = document.getElementById('morebtn');
+  if (!emt) return;
+  const on = !emt.classList.contains('more');
+  emt.classList.toggle('more', on);
+  if (btn) btn.classList.toggle('on', on);
+  syncCanvasHeight(); onCanvasResize(); // the toolbar grew or shrank
+}
+// The sticky Run mirrors whichever action is live: Run normally, Stop while a
+// run is in flight, so a long run can be cancelled from the plots without
+// scrolling back to the toolbar.
+let fabRunning = false;
+function fabAction() { if (fabRunning) stopSim(); else runEMTLive(); }
+function syncFab(running) {
+  fabRunning = !!running;
+  const f = document.getElementById('fabrun');
+  if (!f) return;
+  f.classList.toggle('stop', fabRunning);
+  f.textContent = fabRunning ? '■ Stop' : '▶ Run';
+  f.title = fabRunning ? 'Stop the running simulation' : 'Run the simulation';
+}
+// Show it only once the real Run button has scrolled out of view. An
+// IntersectionObserver rather than a scroll handler: this has to be correct
+// while the page is also being scrolled by revealPlots(), and a scroll listener
+// firing during a smooth scroll is exactly where that gets fiddly.
+function bindFab() {
+  const btn = document.getElementById('runbtn');
+  const emt = document.querySelector('.emt');
+  if (!btn || !emt || typeof IntersectionObserver === 'undefined') return;
+  new IntersectionObserver(es => {
+    emt.classList.toggle('fab', !es[0].isIntersecting);
+  }, { threshold: 0 }).observe(btn);
+}
 // Numerics popover (time step, plot step, flow arrows), anchored under its gear
 // button. Not persisted: it is a transient panel, not a layout preference.
 function toggleSimAdv(ev) {
@@ -5501,6 +5539,7 @@ function setRunning(running) {
   const runBtn = document.getElementById('runbtn'), stopBtn = document.getElementById('stopbtn');
   if (runBtn) runBtn.disabled = running;
   if (stopBtn) stopBtn.disabled = !running;
+  syncFab(running); // the sticky control mirrors whichever action is live
 }
 // Solve the steady-state power flow and annotate the canvas. Standalone action
 // (the ⚖ Power flow button); Run uses the same solve to initialize when "Init
@@ -5672,6 +5711,8 @@ syncLibraryUI(); // apply persisted Library (left sidebar) preference before fir
 syncParamsUI(); // apply persisted Params-rail visibility preference
 syncScienceUI(); // apply persisted Science-rail visibility preference
 syncAboutUI(); // show the description unless this visitor dismissed it before
+syncFab(false); // sticky Run starts in its Run state
+bindFab(); // ...and appears only once the real Run button scrolls away
 buildExamplesMenu(); // populate the Examples picker from the embedded set
 bootFromUrl(); // ?example=<name> if present and known, else the Demo circuit
 onCanvasResize(); // sync the camera to the element's real aspect (VIEW0's 680:340 is only nominal)
