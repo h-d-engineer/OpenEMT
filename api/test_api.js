@@ -661,7 +661,7 @@ function approxPct(sim, exp) { return Math.abs(sim - exp) / Math.abs(exp) * 100;
     try {
       await client.connect(tr);
       const tools = (await client.listTools()).tools.map(t => t.name);
-      check('MCP exposes 14 tools', tools.length === 14, 'n=' + tools.length);
+      check('MCP exposes 17 tools', tools.length === 17, 'n=' + tools.length);
       // The server used to restate its version as a literal and had already
       // drifted: it announced 0.1.0 after the package shipped 0.1.1. Assert it
       // against package.json so the next bump cannot silently repeat that.
@@ -688,6 +688,388 @@ function approxPct(sim, exp) { return Math.abs(sim - exp) / Math.abs(exp) * 100;
       await client.close();
     }
   });
+}
+
+// ---- subcircuits ----
+{
+  const feeder = {
+    ports: [{ name: 'in', block: 1, term: 0 }],
+    params: { load: { default: 12, to: [{ block: 2, param: 'R' }] } },
+    blocks: [
+      { id: 1, type: 'line', x: 0, y: 0, rot: 0, params: { R: 0.3, L: 2, C: 0, Rm: 0, Lm: 0 } },
+      { id: 2, type: 'rlc', x: 100, y: 0, rot: 0, params: { R: 12, L: -1, C: -1 } },
+      { id: 3, type: 'gnd', x: 100, y: 80, rot: 0, params: {} },
+      { id: 4, type: 'probe', x: 60, y: -60, rot: 0, params: {} },
+    ],
+    wires: [{ a: [1, 1], b: [2, 0] }, { a: [2, 1], b: [3, 0] }, { a: [4, 0], b: [2, 0] }],
+  };
+  const twoN = defs => ({
+    webemt: 1, vconv: 'ph', defs,
+    blocks: [
+      { id: 10, type: 'src', x: 0, y: 0, rot: 0, params: { Vrms: 277, f: 60, Rs: 0.05 } },
+      { id: 11, type: 'gnd', x: 0, y: 80, rot: 0, params: {} },
+      { id: 12, type: 'subckt', x: 200, y: 0, rot: 0, params: { def: 'feeder', load: 12 } },
+      { id: 13, type: 'subckt', x: 200, y: 150, rot: 0, params: { def: 'feeder', load: 24 } },
+    ],
+    wires: [{ a: [10, 1], b: [12, 0] }, { a: [10, 1], b: [13, 0] }, { a: [10, 0], b: [11, 0] }],
+  });
+
+  const em = new OpenEMT();
+  const lr = em.loadCircuit(twoN({ feeder }));
+  check('a hierarchical circuit loads', !(lr && lr.err), JSON.stringify(lr && lr.err));
+  check('flattening expands both instances', lr.subcircuits && lr.subcircuits.blocksAfter === 10
+    && lr.subcircuits.instances === 2, JSON.stringify(lr.subcircuits && {
+      before: lr.subcircuits.blocksBefore, after: lr.subcircuits.blocksAfter }));
+  check('the instance map resolves an inner block',
+    typeof lr.subcircuits.map['12/4'] === 'number' && lr.subcircuits.map['12/4'] !== lr.subcircuits.map['13/4'],
+    JSON.stringify([lr.subcircuits.map['12/4'], lr.subcircuits.map['13/4']]));
+
+  // Parameter overrides must reach the inner blocks, and the two instances must
+  // be genuinely separate: this is the thing the scale block cannot do.
+  const loads = em.getCircuit().blocks.filter(b => b.type === 'rlc').map(b => b.params.R).sort((a, b) => a - b);
+  check('parameter overrides reach the instances', loads[0] === 12 && loads[1] === 24, JSON.stringify(loads));
+
+  em.runSimulation({ Tms: 80, nph: 1 });
+  const A = em.query(lr.subcircuits.map['12/4'], 'Vrms').steadyState[0];
+  const B = em.query(lr.subcircuits.map['13/4'], 'Vrms').steadyState[0];
+
+  // The strongest available check: the flattened model must be the same circuit
+  // as the one built by hand, to the last digit. Anything less and the
+  // hierarchy is quietly changing the physics.
+  const h = new OpenEMT(); h.reset(); h.setVconv('ph');
+  const s1 = h.addBlock('src', { Vrms: 277, f: 60, Rs: 0.05 }), g0 = h.addBlock('gnd');
+  h.addWire(s1, 0, g0, 0);
+  const mk = R => {
+    const l = h.addBlock('line', { R: 0.3, L: 2, C: 0, Rm: 0, Lm: 0 });
+    const r2 = h.addBlock('rlc', { R, L: -1, C: -1 });
+    const gg = h.addBlock('gnd'), pr = h.addBlock('probe');
+    h.addWire(s1, 1, l, 0); h.addWire(l, 1, r2, 0); h.addWire(r2, 1, gg, 0); h.addWire(pr, 0, r2, 0);
+    return pr;
+  };
+  const pa = mk(12), pb = mk(24);
+  h.runSimulation({ Tms: 80, nph: 1 });
+  check('a flattened subcircuit matches the hand-built circuit exactly',
+    Math.abs(A - h.query(pa, 'Vrms').steadyState[0]) < 1e-9
+      && Math.abs(B - h.query(pb, 'Vrms').steadyState[0]) < 1e-9,
+    A + ' vs ' + h.query(pa, 'Vrms').steadyState[0]);
+
+  // Every failure mode names what is wrong, because a hierarchy makes a broken
+  // reference much harder to find by eye than a flat circuit does.
+  const bad = spec => (new OpenEMT()).loadCircuit(spec).err || '';
+  check('an unknown definition is named',
+    /is not in defs/.test(bad(twoN({}))), bad(twoN({})));
+  const noPorts = JSON.parse(JSON.stringify(feeder)); noPorts.ports = [];
+  check('a definition with no ports is refused',
+    /declares no ports/.test(bad(twoN({ feeder: noPorts }))), bad(twoN({ feeder: noPorts })));
+  const badBind = JSON.parse(JSON.stringify(feeder));
+  badBind.params.load.to = [{ block: 2, param: 'nope' }];
+  check('a parameter bound to a missing param is named',
+    /which that block does not have/.test(bad(twoN({ feeder: badBind }))), bad(twoN({ feeder: badBind })));
+  const badPort = JSON.parse(JSON.stringify(feeder)); badPort.ports = [{ name: 'in', block: 99, term: 0 }];
+  check('a port naming a missing block is refused',
+    /does not contain/.test(bad(twoN({ feeder: badPort }))), bad(twoN({ feeder: badPort })));
+  const selfRef = { ports: [{ name: 'in', block: 1, term: 0 }],
+    blocks: [{ id: 1, type: 'subckt', x: 0, y: 0, rot: 0, params: { def: 'feeder' } }], wires: [] };
+  check('a self-instantiating definition is caught rather than hanging',
+    /instantiates itself|deeper than 8/.test(bad(twoN({ feeder: selfRef }))), bad(twoN({ feeder: selfRef })));
+
+  // A flat circuit must be entirely unaffected: no defs, no subcircuits key.
+  const plain = (new OpenEMT()).loadCircuit(path.resolve(__dirname, '..', 'examples', 'ieee9bus.json'));
+  check('a flat circuit reports no subcircuit metadata', plain.subcircuits === undefined,
+    JSON.stringify(plain.subcircuits));
+}
+
+// ---- survivability-weighted availability ----
+{
+  const em = new OpenEMT();
+  em.loadExample('central_ups_sag');
+  const model = transfer => ({
+    name: 'IT load',
+    series: [
+      { name: 'utility feed', lambda: 1.2, mttr: 4 },
+      { name: 'UPS chain', transfer, parallel: [
+        { name: 'rectifier + inverter', lambda: 0.5, mttr: 8 },
+        { name: 'battery', lambda: 0.3, mttr: 6 },
+      ] },
+    ],
+  });
+  // A single component: U = lambda*mttr/hours. 1.2/yr at 4 h = 4.8 h down of
+  // 8766, so A = 0.99945243.
+  const one = em.availability({ model: { name: 'feed', lambda: 1.2, mttr: 4 } });
+  check('component availability is lambda*mttr/hours',
+    Math.abs(one.availability - (1 - 1.2 * 4 / 8766)) < 1e-12, 'A=' + one.availability);
+
+  // The two limits that make the redundancy credit defensible: a transfer that
+  // always works gives the textbook parallel result, and one that never works
+  // is worth exactly the primary alone.
+  const ideal = em.availability({ model: model({ successProb: 1 }) });
+  const none = em.availability({ model: model({ successProb: 0 }) });
+  const grp = r => r.tree.of[1];
+  check('p=1 reduces to the textbook parallel result',
+    Math.abs(grp(ideal).A - grp(ideal).idealA) < 1e-12, grp(ideal).A + ' vs ' + grp(ideal).idealA);
+  check('p=0 is worth exactly the primary alone',
+    Math.abs(grp(none).A - grp(none).primaryA) < 1e-12, grp(none).A + ' vs ' + grp(none).primaryA);
+  check('a transfer that cannot happen costs availability',
+    none.availability < ideal.availability, none.availability + ' vs ' + ideal.availability);
+
+  // The join this exists for. The same block diagram, scored against a study
+  // that ran: passing keeps the redundancy, failing removes it.
+  const good = em.runStudy({ run: { Tms: 400, pf: true },
+    assert: [{ name: 'IT holds 97%', block: 15, signal: 'Vrms', metric: 'min', op: '>=', value: 0.97 * 277 }] });
+  const bad = em.runStudy({ run: { Tms: 400, pf: true },
+    assert: [{ name: 'IT holds 300 V', block: 15, signal: 'Vrms', metric: 'min', op: '>=', value: 300 }] });
+  check('the demonstration studies disagree as intended', good.pass === true && bad.pass === false,
+    'good=' + good.pass + ' bad=' + bad.pass);
+  const vOk = em.availability({ model: model({ study: good }) });
+  const vNo = em.availability({ model: model({ study: bad }) });
+  check('a verified-good transfer earns the full redundancy',
+    Math.abs(vOk.availability - ideal.availability) < 1e-12, vOk.availability);
+  check('a verified-failing transfer removes the redundancy',
+    Math.abs(vNo.availability - none.availability) < 1e-12, vNo.availability);
+  check('the failed transfer costs real downtime',
+    vNo.downtimeMinutesPerYear - vOk.downtimeMinutesPerYear > 200,
+    (vNo.downtimeMinutesPerYear - vOk.downtimeMinutesPerYear).toFixed(0) + ' min/yr');
+
+  // Honesty about provenance is the point of computing this here rather than in
+  // a spreadsheet, so it has to be reported, not merely available.
+  check('an assumed transfer is flagged as assumed',
+    /ASSUMED/.test(em.availability({ model: model({}) }).verdict), em.availability({ model: model({}) }).verdict);
+  check('a bare number is still flagged as assumed',
+    em.availability({ model: model({ successProb: 0.9 }) }).assumptions[0].verified === false);
+  check('a study-backed transfer is reported as verified with its evidence',
+    vOk.assumptions[0].verified === true && /cases passed/.test(vOk.assumptions[0].evidence),
+    vOk.assumptions[0].evidence);
+  check('a model with no redundancy needs no transfer assumption',
+    /No redundancy/.test(em.availability({ model: { name: 'feed', lambda: 1, mttr: 2 } }).verdict));
+
+  // Nines and downtime must agree with each other and with the availability.
+  check('nines and downtime agree with the availability',
+    Math.abs(vOk.nines - (-Math.log10(1 - vOk.availability))) < 1e-12
+      && Math.abs(vOk.downtimeMinutesPerYear - (1 - vOk.availability) * 8766 * 60) < 1e-6,
+    vOk.nines + ' / ' + vOk.downtimeMinutesPerYear);
+
+  check('a malformed component is refused',
+    /needs numeric lambda/.test(em.availability({ model: { name: 'x', lambda: 'oops', mttr: 1 } }).err || ''),
+    em.availability({ model: { name: 'x', lambda: 'oops', mttr: 1 } }).err);
+  check('a missing model is refused', /needs a \{ model \}/.test(em.availability({}).err || ''),
+    em.availability({}).err);
+}
+
+// ---- protection coordination ----
+{
+  // core.js keeps its own copy of the C37.112 constants because reaching into
+  // the vm sandbox for a solver constant would couple the study layer to the
+  // solver's internals. A copy that can drift from the law the solver actually
+  // integrates would make every coordination curve quietly wrong, so compare
+  // the two tables directly.
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'blocks.js'), 'utf8');
+  const api = fs.readFileSync(path.join(__dirname, 'core.js'), 'utf8');
+  // Anchor on the table name, then read the three curve rows out of it. Simple
+  // on purpose: a clever parser that silently matches nothing would make this
+  // guard pass forever, which is the failure mode it exists to prevent.
+  const grab = (text, name) => {
+    const at = text.indexOf(name + ' = {');
+    if (at < 0) return null;
+    const body = text.slice(at, text.indexOf('};', at));
+    const out = {};
+    // No regex. Escaping a pattern through the layers between here and the file
+    // is how the first version of this guard ended up matching nothing and
+    // reporting null for both tables, which is a guard that cannot fail.
+    ['MI', 'VI', 'EI'].forEach(k => {
+      const i = body.indexOf(k + ': {');
+      if (i < 0) return;
+      const row = body.slice(i + k.length + 3, body.indexOf('}', i));
+      out[k] = {};
+      row.split(',').forEach(pair => {
+        const bits = pair.split(':');
+        if (bits.length === 2) out[k][bits[0].trim()] = +bits[1];
+      });
+    });
+    return Object.keys(out).length === 3 ? out : null;
+  };
+  const solver = grab(src, 'RELAY_CURVES'), study = grab(api, 'TCC_CURVES');
+  check('coordination curve constants match the solver',
+    !!solver && !!study && JSON.stringify(solver) === JSON.stringify(study),
+    'solver=' + JSON.stringify(solver) + ' study=' + JSON.stringify(study));
+
+  const em = new OpenEMT();
+  em.reset();
+  const s1 = em.addBlock('src', { Vrms: 277, Rs: 0.05 });
+  const main = em.addBlock('relay', { Ipu: 600, curve: 'VI', TD: 0.5, Iinst: 0, brkId: 0 });
+  const fdr = em.addBlock('relay', { Ipu: 200, curve: 'VI', TD: 0.15, Iinst: 0, brkId: 0 });
+  const ld = em.addBlock('rlc', { R: 2, L: -1, C: -1 });
+  const g1 = em.addBlock('gnd'), g2 = em.addBlock('gnd');
+  em.addWire(s1, 1, main, 0); em.addWire(main, 1, fdr, 0); em.addWire(fdr, 1, ld, 0);
+  em.addWire(s1, 0, g1, 0); em.addWire(ld, 1, g2, 0);
+
+  // Hand calculation against IEEE C37.112, t = TD*(A/(M^p - 1) + B). Feeder at
+  // 800 A: M = 4, so 0.15*(19.61/15 + 0.491) = 0.26975 s.
+  const co = em.coordination({ chain: [fdr, main], currents: [400, 800, 1600, 3200, 6400], cti: 0.3 });
+  const at800 = co.pairs[0].at.find(x => x.I === 800);
+  check('TCC time matches the C37.112 closed form', Math.abs(at800.tDown - 0.26975) < 1e-4,
+    't=' + at800.tDown);
+
+  // Below pickup is "not applicable", not "very slow": the main picks up at
+  // 600 A and cannot be the device that clears a 400 A fault.
+  const at400 = co.pairs[0].at.find(x => x.I === 400);
+  check('a device below pickup is reported as not applicable',
+    at400.tUp === null && at400.pass === null, JSON.stringify(at400));
+
+  // The finding a coordination study exists to produce: inverse curves converge,
+  // so a pair selective at moderate current fails at maximum fault current.
+  check('selectivity holds at moderate current', co.pairs[0].at.find(x => x.I === 1600).pass === true);
+  check('miscoordination is caught at high current', co.pairs[0].at.find(x => x.I === 6400).pass === false,
+    'interval=' + co.pairs[0].at.find(x => x.I === 6400).interval);
+  check('study verdict is miscoordinated overall', co.pass === false, 'pass=' + co.pass);
+  check('worst pair margin is negative and located',
+    co.pairs[0].worst.margin < 0 && co.pairs[0].worst.I === 6400, JSON.stringify(co.pairs[0].worst));
+
+  // Widening the gap between the two settings must restore selectivity.
+  const co2 = em.coordination({ chain: [fdr, main], currents: [800, 1600, 3200], cti: 0.3 });
+  check('a coordinated range passes', co2.pass === true, 'pass=' + co2.pass);
+
+  // The instantaneous element short-circuits the inverse element, as in step().
+  em.S.blocks.find(b => b.id === fdr).params.Iinst = 2000;
+  const co3 = em.coordination({ chain: [fdr, main], currents: [3200], cti: 0.3 });
+  check('the instantaneous element clears at zero time',
+    co3.pairs[0].at[0].tDown === 0, 't=' + co3.pairs[0].at[0].tDown);
+  em.S.blocks.find(b => b.id === fdr).params.Iinst = 0;
+
+  // Refusals: an ambiguous chain must be refused rather than guessed, because
+  // which device backs up which is a protection decision.
+  check('an ambiguous chain is refused', /Give the chain explicitly/.test(em.coordination({}).err || ''),
+    em.coordination({}).err);
+  check('a non-relay in the chain is refused', /not an overcurrent relay/.test(em.coordination({ chain: [ld] }).err || ''),
+    em.coordination({ chain: [ld] }).err);
+  const em2 = new OpenEMT(); em2.reset(); em2.addBlock('gnd');
+  check('a circuit with no relays is refused', /nothing to coordinate/.test(em2.coordination({}).err || ''),
+    em2.coordination({}).err);
+}
+
+// ---- study layer ----
+// The study layer emits verdicts rather than waveforms, so its own failure
+// modes are the dangerous kind: a confident PASS or FAIL for a reason that has
+// nothing to do with the circuit.
+{
+  const em = new OpenEMT();
+  em.loadExample('central_ups_sag');
+
+  // The trap this layer was born with. Vrms, Irms, P and Q are windowed over a
+  // cycle and ramp from zero while the filter fills, so metric:'min' over a
+  // whole run returns roughly zero for every case and reports a confident FAIL
+  // about nothing. Assert the fill region is excluded and that the excluded
+  // span is reported rather than hidden.
+  const fill = em.runStudy({
+    run: { Tms: 200, pf: true },
+    assert: [{ name: 'fill', block: 15, signal: 'Vrms', metric: 'min', op: '>=', value: 0 }],
+  });
+  check('study skips the RMS fill region', fill.cases[0].results[0].measured > 200,
+    'measured=' + fill.cases[0].results[0].measured);
+  check('study reports the skipped fill span', fill.cases[0].results[0].skippedFillMs > 10,
+    'skippedFillMs=' + fill.cases[0].results[0].skippedFillMs);
+
+  // A sweep must actually perturb the model. Guarding this because a sweep that
+  // silently fails to apply produces identical results across every case, which
+  // reads as a robust design rather than as a broken harness.
+  const sw = em.runStudy({
+    run: { Tms: 300, pf: true },
+    sweep: { block: 21, param: 'Rf', values: [1.0, 0.05] },
+    assert: [{ name: 'bus', block: 13, signal: 'Vrms', metric: 'min', op: '>=', value: 0 }],
+  });
+  const [m1, m2] = sw.cases.map(c => c.results[0].measured);
+  check('sweep overrides reach the solver', Math.abs(m1 - m2) > 100, m1.toFixed(1) + ' vs ' + m2.toFixed(1));
+  check('sweep records what it applied', /Rf = 0.05/.test((sw.cases[1].applied || []).join(',')),
+    JSON.stringify(sw.cases[1].applied));
+
+  // The documented behaviour of this case: the battery catches the DC link at
+  // about 360 V and the IT load rides through. If the study layer cannot
+  // reproduce the example's own README, it is not measuring what it claims.
+  const rt = em.runStudy({
+    run: { Tms: 500, pf: true },
+    sweep: { block: 21, param: 'Rf', values: [1.0, 0.3, 0.05] },
+    assert: [
+      { name: 'IT rides through', block: 15, signal: 'Vrms', metric: 'min', op: '>=', value: 0.97 * 277 },
+      { name: 'DC link held', block: 14, signal: 'Vrms', metric: 'min', op: '>=', value: 280, window: { from: 210, to: 295 } },
+    ],
+  });
+  check('ride-through study passes every fault severity', rt.pass === true,
+    rt.passed + '/' + rt.nCases + ' failed=' + JSON.stringify(rt.failedCases));
+  check('DC link holds near the documented 360 V',
+    Math.abs(rt.cases[2].results[1].measured - 360) < 5, 'measured=' + rt.cases[2].results[1].measured);
+  check('study reports a worst margin', rt.worst && rt.worst.relMargin > 0 && rt.worst.relMargin < 1,
+    'relMargin=' + (rt.worst && rt.worst.relMargin));
+
+  // A failing criterion must fail, with a negative margin. A verdict layer that
+  // cannot say no is decoration.
+  const nf = em.runStudy({
+    run: { Tms: 200, pf: true },
+    assert: [{ name: 'impossible', block: 15, signal: 'Vrms', metric: 'min', op: '>=', value: 1e6 }],
+  });
+  check('study fails a criterion that cannot hold', nf.pass === false && nf.cases[0].results[0].margin < 0,
+    'margin=' + nf.cases[0].results[0].margin);
+
+  // N-1. Losing the utility source is the contingency this facility exists to
+  // survive, so the verdict should be that the IT bus stays up: block 1 is the
+  // 2.4 kV utility src, and the UPS carries the load without it. This is the
+  // study layer reproducing the point of the case, not just running.
+  const n1 = em.runStudy({
+    run: { Tms: 200 },
+    cases: [{ name: 'lose utility', remove: [1] }],
+    assert: [{ name: 'IT bus stays up', block: 15, signal: 'Vrms', metric: 'min', op: '>=', value: 200 }],
+  });
+  check('N-1 removal is applied and reported', /removed #1/.test((n1.cases[0].applied || []).join(',')),
+    JSON.stringify(n1.cases[0].applied));
+  check('UPS rides through loss of the utility source', n1.pass === true,
+    'measured=' + n1.cases[0].results[0].measured);
+
+  // The other direction: a contingency that leaves the circuit unsolvable must
+  // report the solver's reason, not pass by default. Ground #18 is load bearing.
+  const dead = em.runStudy({
+    run: { Tms: 100 },
+    cases: [{ name: 'no ground 18', remove: [18] }],
+    assert: [{ name: 'any', block: 15, signal: 'Vrms', metric: 'min', op: '>=', value: 1 }],
+  });
+  check('an unsolvable contingency fails with the solver reason',
+    dead.pass === false && /[Ss]ingular/.test(dead.cases[0].err || ''), dead.cases[0].err);
+
+  // Operator coverage and the between/approx forms used for validation checks.
+  const ops = em.runStudy({
+    run: { Tms: 200, pf: true },
+    assert: [
+      { name: 'between', block: 15, signal: 'Vrms', metric: 'steady', op: 'between', value: 250, value2: 300 },
+      { name: 'approx', block: 15, signal: 'Vrms', metric: 'steady', op: 'approx', value: 277, tol: 10 },
+      { name: 'max', block: 15, signal: 'Vrms', metric: 'max', op: '<=', value: 400 },
+    ],
+  });
+  check('between / approx / max operators all evaluate', ops.cases[0].results.every(r => r.pass),
+    JSON.stringify(ops.cases[0].results.map(r => r.assert + '=' + r.pass)));
+
+  // A study must leave the instance exactly as it found it. Each case mutates
+  // the live circuit to apply its overrides, so without an explicit restore the
+  // last case's perturbation silently becomes everyone else's starting point.
+  // Caught in development: a study that removed a ground made the NEXT study
+  // report a singular matrix on a circuit the caller had never touched.
+  const before = JSON.stringify(em.getCircuit());
+  em.runStudy({
+    run: { Tms: 100 },
+    cases: [{ name: 'strip a ground', remove: [18] }, { name: 'retune', set: [{ block: 21, param: 'Rf', value: 9 }] }],
+    assert: [{ block: 15, signal: 'Vrms', metric: 'min', op: '>=', value: 1 }],
+  });
+  check('a study restores the circuit it started from', JSON.stringify(em.getCircuit()) === before,
+    'circuit differs after the study');
+  const afterStudy = em.runStudy({
+    run: { Tms: 200, pf: true },
+    assert: [{ block: 15, signal: 'Vrms', metric: 'steady', op: 'between', value: 250, value2: 300 }],
+  });
+  check('a later study is unaffected by an earlier one', afterStudy.pass === true,
+    afterStudy.cases[0].err || JSON.stringify(afterStudy.cases[0].results));
+
+  // Bad input must be refused clearly rather than producing an empty verdict.
+  check('study without assertions is refused', !!em.runStudy({ run: { Tms: 50 } }).err, 'no err');
+  const badp = em.runStudy({ run: { Tms: 50 }, cases: [{ name: 'x', set: [{ block: 21, param: 'nope', value: 1 }] }],
+    assert: [{ block: 15, signal: 'Vrms', metric: 'min', op: '>=', value: 0 }] });
+  check('study names an unknown parameter', /has no parameter "nope"/.test(badp.cases[0].err || ''),
+    badp.cases[0].err);
 }
 
 (async () => {

@@ -215,6 +215,122 @@ program.command('run')
     }
   });
 
+// ---- avail ----
+program.command('avail')
+  .description('Availability of a redundancy model, weighted by EMT-verified transfer success.')
+  .argument('<file>', 'circuit JSON (webemt:1), or the name of a shipped example')
+  .requiredOption('--model <path-or-json>', 'reliability model: a .json file path, or inline JSON')
+  .option('--study <path-or-json>', 'study spec to run; its verdict scores every transfer marked "verify": true')
+  .option('--json', 'Emit machine-readable JSON.')
+  .action((file, opts) => {
+    const em = new OpenEMT();
+    const lr = resolveCase(em, file);
+    if (lr && lr.err) fail(lr.err);
+    const read = raw => {
+      try { return /^\s*[{[]/.test(raw) ? JSON.parse(raw) : JSON.parse(require('fs').readFileSync(raw, 'utf8')); }
+      catch (e) { fail('Could not read ' + raw + ': ' + e.message); return null; }
+    };
+    const model = read(opts.model);
+    if (opts.study) {
+      const st = em.runStudy(read(opts.study));
+      if (st && st.err) fail(st.err);
+      // Attach the verdict to every transfer that asked to be verified.
+      (function attach(n) {
+        if (!n || typeof n !== 'object') return;
+        if (n.transfer && n.transfer.verify) n.transfer = { study: st };
+        (n.series || n.parallel || []).forEach(attach);
+      })(model);
+    }
+    const r = em.availability({ model, hoursPerYear: opts.hours });
+    if (r && r.err) fail(r.err);
+    if (opts.json) { emit(r, true); return; }
+    console.log('availability: ' + r.availability.toFixed(7)
+      + '  (' + r.nines.toFixed(2) + ' nines, ' + r.downtimeMinutesPerYear.toFixed(1) + ' min/year)');
+    console.log('');
+    console.log(r.verdict);
+    if (r.assumptions.length) {
+      console.log('');
+      console.log('transfer assumptions:');
+      r.assumptions.forEach(a => console.log('  ' + (a.verified ? '[verified] ' : '[ASSUMED]  ')
+        + a.at + '  p=' + a.transferSuccessProbability + '  ' + a.evidence));
+    }
+  });
+
+// ---- coord ----
+program.command('coord')
+  .description('Protective device coordination: time-current curves and selectivity margins.')
+  .argument('<file>', 'circuit JSON (webemt:1), or the name of a shipped example')
+  .option('--chain <ids>', 'relay block IDs, downstream first: e.g. 3,2', v => v.split(',').map(x => parseInt(x, 10)))
+  .option('--currents <amps>', 'currents to check, comma separated', v => v.split(',').map(parseFloat))
+  .option('--cti <s>', 'required coordination time interval in seconds (default 0.3)', parseFloat)
+  .option('--json', 'Emit machine-readable JSON (includes the full curves).')
+  .action((file, opts) => {
+    const em = new OpenEMT();
+    const lr = resolveCase(em, file);
+    if (lr && lr.err) fail(lr.err);
+    const r = em.coordination({ chain: opts.chain, currents: opts.currents, cti: opts.cti });
+    if (r && r.err) fail(r.err);
+    if (opts.json) { emit(r, true); return; }
+    console.log((r.pass === null ? 'NOT ASSESSED' : r.pass ? 'SELECTIVE' : 'MISCOORDINATED')
+      + ': ' + r.nDevices + ' devices, required interval ' + r.cti + ' s');
+    if (r.note) console.log(r.note);
+    r.pairs.forEach(p2 => {
+      console.log('');
+      console.log('#' + p2.downstream + ' backed up by #' + p2.upstream
+        + (p2.pass === null ? '  (not assessed)' : p2.pass ? '  selective' : '  MISCOORDINATED'));
+      p2.at.forEach(x => {
+        const tD = x.tDown == null ? '   -  ' : x.tDown.toFixed(3);
+        const tU = x.tUp == null ? '   -  ' : x.tUp.toFixed(3);
+        console.log('   ' + String(Math.round(x.I)).padStart(7) + ' A   down ' + tD + ' s   up ' + tU
+          + ' s   interval ' + (x.interval == null ? 'n/a' : x.interval.toFixed(3) + ' s')
+          + (x.pass === null ? '   (' + x.note + ')' : x.pass ? '' : '   BELOW CTI'));
+      });
+      if (p2.worst) console.log('   worst: ' + Math.round(p2.worst.I) + ' A, interval '
+        + p2.worst.interval.toFixed(3) + ' s, margin ' + p2.worst.margin.toFixed(3) + ' s');
+    });
+    if (r.pass === false) process.exitCode = 1;
+  });
+
+// ---- study ----
+// A study takes a JSON spec (see api/core.js runStudy) and returns a verdict
+// table rather than a waveform. The spec is a file or inline JSON because it is
+// structured enough that flags would be worse than a document.
+program.command('study')
+  .description('Run a multi-case study with assertions and report pass/fail margins.')
+  .argument('<file>', 'circuit JSON (webemt:1), or the name of a shipped example')
+  .requiredOption('--spec <path-or-json>', 'study spec: a .json file path, or inline JSON')
+  .option('--json', 'Emit machine-readable JSON.')
+  .action((file, opts) => {
+    const em = new OpenEMT();
+    const lr = resolveCase(em, file);
+    if (lr && lr.err) fail(lr.err);
+    let spec;
+    const raw = opts.spec;
+    try {
+      spec = /^\s*[{[]/.test(raw) ? JSON.parse(raw)
+        : JSON.parse(require('fs').readFileSync(raw, 'utf8'));
+    } catch (e) { fail('Could not read the study spec: ' + e.message); }
+    const r = em.runStudy(spec);
+    if (r && r.err) fail(r.err);
+    if (opts.json) { emit(r, true); return; }
+    console.log((r.pass ? 'PASS' : 'FAIL') + ': ' + r.passed + ' of ' + r.nCases + ' cases passed');
+    if (r.worst) {
+      console.log('worst margin: ' + r.worst.assert + '  (case "' + r.worst.case + '", measured '
+        + fmt(r.worst.measured) + ' vs limit ' + fmt(r.worst.limit) + ', margin ' + fmt(r.worst.margin) + ')');
+    }
+    console.log('');
+    r.cases.forEach(c => {
+      console.log((c.pass ? 'PASS ' : 'FAIL ') + c.name + (c.err ? '  [' + c.err + ']' : ''));
+      (c.results || []).forEach(x => {
+        if (x.err) { console.log('    ERR  ' + x.assert + ': ' + x.err); return; }
+        console.log('    ' + (x.pass ? 'ok   ' : 'FAIL ') + x.assert
+          + '  measured ' + fmt(x.measured) + ', limit ' + fmt(x.limit) + ', margin ' + fmt(x.margin));
+      });
+    });
+    if (!r.pass) process.exitCode = 1; // usable as a CI gate
+  });
+function fmt(v) { return v == null ? '-' : (Math.abs(v) >= 1000 ? v.toFixed(0) : v.toFixed(3)); }
+
 // ---- query ----
 program.command('query')
   .description('Query a signal from a simulation run by block ID.')

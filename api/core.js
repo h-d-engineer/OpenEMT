@@ -73,6 +73,202 @@ function avgAfter(arr, t, lo) {
 // Mirrors smoke_test.js:75 signFor (els[idx].kind).
 function signFor(kind) { return (kind === 'src' || kind === 'gfm') ? -1 : 1; }
 
+// ---- subcircuits ----
+//
+// A datacenter is the same UPS chain repeated, and the interesting question is
+// always what happens BETWEEN chains during a transfer. The `scale` block
+// cannot answer that by construction: it represents N copies as one aggregate
+// and deliberately does not conserve power at the coupling, so there is no
+// second chain to transfer to. Subcircuits give real, separately simulated
+// units, and they are also how an agent composes a large model without losing
+// the thread: four instances of one verified module rather than 200 blocks.
+//
+// A circuit may carry a `defs` map of reusable definitions and instantiate one
+// with a `subckt` block. Flattening expands every instance into ordinary blocks
+// and wires BEFORE the solver sees it, so nothing downstream changes.
+//
+//   "defs": {
+//     "ups": {
+//       "ports":  [ { "name": "AC in", "block": 1, "term": 0 } ],
+//       "params": { "battAh": { "default": 0.02, "to": [ { "block": 4, "param": "Ah" } ] } },
+//       "blocks": [ ... ],      // ids are LOCAL to the definition
+//       "wires":  [ ... ]
+//     }
+//   }
+//   { "id": 7, "type": "subckt", "params": { "def": "ups", "battAh": 0.05 } }
+//
+// An outer wire to (instance, terminal k) is rewritten to the inner block and
+// terminal that port k names. Parameter overrides are explicit bindings rather
+// than name matching, so a definition's public knobs are a declared surface
+// instead of whatever its internals happen to be called.
+//
+// Lives here rather than in src/ because this is the agent path: an agent
+// composes JSON, and the canvas cannot yet draw or edit a subcircuit. Promoting
+// it to src/ is what browser support would need.
+function flattenCircuit(circuit) {
+  const defs = circuit.defs || {};
+  const out = { blocks: [], wires: [] };
+  const map = {};   // "instancePath/localId" -> flattened id (or a port list)
+  let nextId = 1;
+  (circuit.blocks || []).forEach(b => { if (+b.id >= nextId) nextId = +b.id + 1; });
+
+  const expand = (blocks, wires, pathPrefix, depth, chain) => {
+    if (depth > 8) return 'Subcircuit nesting is deeper than 8 levels at "' + pathPrefix
+      + '"; this is almost certainly a definition that instantiates itself.';
+    for (const b of blocks) {
+      if (b.type !== 'subckt') {
+        const nb = JSON.parse(JSON.stringify(b));
+        nb.id = nextId++;
+        map[pathPrefix + b.id] = nb.id;
+        out.blocks.push(nb);
+        continue;
+      }
+      const dname = b.params && b.params.def;
+      const d = defs[dname];
+      if (!d) return 'Block #' + b.id + ' instantiates definition "' + dname + '", which is not in defs.';
+      if (chain.includes(dname)) return 'Definition "' + dname + '" instantiates itself (via '
+        + chain.concat(dname).join(' -> ') + '), which cannot be flattened.';
+      if (!Array.isArray(d.ports) || !d.ports.length) return 'Definition "' + dname
+        + '" declares no ports, so nothing can connect to it.';
+      const inner = JSON.parse(JSON.stringify({ blocks: d.blocks || [], wires: d.wires || [] }));
+      const decl = d.params || {};
+      for (const [pname, pdef] of Object.entries(decl)) {
+        const val = (b.params && pname in b.params) ? b.params[pname] : pdef.default;
+        if (val === undefined) continue;
+        for (const bind of (pdef.to || [])) {
+          const target = inner.blocks.find(x => x.id === bind.block);
+          if (!target) return 'Definition "' + dname + '" binds parameter "' + pname + '" to block '
+            + bind.block + ', which it does not contain.';
+          if (!(bind.param in target.params)) return 'Definition "' + dname + '" binds "' + pname
+            + '" to ' + target.type + ' #' + bind.block + '.' + bind.param + ', which that block does not have.';
+          target.params[bind.param] = val;
+        }
+      }
+      const sub = pathPrefix + b.id + '/';
+      const e = expand(inner.blocks, inner.wires, sub, depth + 1, chain.concat(dname));
+      if (e) return e;
+      const resolved = d.ports.map(p => {
+        const fid = map[sub + p.block];
+        return typeof fid === 'number' ? [fid, p.term || 0] : null;
+      });
+      if (resolved.some(x => x == null)) return 'Definition "' + dname + '" has a port naming a block it does not contain (ports reference '
+        + JSON.stringify(d.ports.map(p => p.block)) + ').';
+      map[pathPrefix + b.id] = resolved;  // an instance maps to its port list
+    }
+    for (const w of wires) {
+      const end = (e2) => {
+        const m = map[pathPrefix + e2[0]];
+        if (m == null) return null;
+        if (Array.isArray(m)) { const p = m[e2[1]]; return p ? p.slice() : null; }
+        return [m, e2[1]];
+      };
+      const a = end(w.a), b2 = end(w.b);
+      if (!a || !b2) return 'A wire references terminal ' + JSON.stringify(!a ? w.a : w.b)
+        + ', which does not resolve: the block is missing, or a subcircuit has no such port.';
+      out.wires.push({ a, b: b2 });
+    }
+    return null;
+  };
+
+  const e = expand(circuit.blocks || [], circuit.wires || [], '', 0, []);
+  if (e) return { err: e };
+  return { blocks: out.blocks, wires: out.wires, map };
+}
+
+// ---- protection coordination ----
+// The same IEEE C37.112 constants the relay block integrates (blocks.js
+// RELAY_CURVES). Duplicated deliberately rather than imported: core.js loads
+// src/ in a vm sandbox and reaching into it for a constant would couple the
+// study layer to the solver's internals. api/test_api.js asserts the two
+// tables agree, so the copy cannot drift silently.
+const TCC_CURVES = {
+  MI: { A: 0.0515, B: 0.1140, p: 0.02, tr: 4.85 },
+  VI: { A: 19.61, B: 0.491, p: 2, tr: 21.6 },
+  EI: { A: 28.2, B: 0.1217, p: 2, tr: 29.1 },
+};
+// Operating time at current I, in seconds. Below pickup the relay never
+// operates, which is null rather than Infinity so it reads as "not applicable"
+// instead of "very slow". The instantaneous element (50) short-circuits the
+// inverse-time element (51) exactly as the solver's step() does.
+function tccTime(d, I) {
+  if (d.Iinst != null && I >= d.Iinst) return 0;
+  const M = I / d.Ipu;
+  if (!(M > 1)) return null;
+  return d.TD * (d.cv.A / (Math.pow(M, d.cv.p) - 1) + d.cv.B);
+}
+function logSpace(lo, hi, n) {
+  if (!(hi > lo) || n < 2) return [lo];
+  const out = [];
+  const a = Math.log(lo), b = Math.log(hi);
+  for (let i = 0; i < n; i++) out.push(Math.exp(a + (b - a) * i / (n - 1)));
+  return out;
+}
+
+// ---- study metrics and comparisons ----
+// Reduce one series over a sample window to the single number an assertion
+// compares. 'steady' is the last full cycle, which is what you want for "where
+// did it settle"; 'final' is the last sample, which is not the same thing on an
+// AC waveform and is a common way to accidentally assert against a zero
+// crossing.
+function metricOf(ser, t, i0, i1, metric, q, r) {
+  if (!ser || !ser.length) return null;
+  const lo = Math.max(0, i0), hi = Math.min(ser.length - 1, i1);
+  if (hi < lo) return null;
+  if (metric === 'final') return ser[hi];
+  if (metric === 'steady') {
+    const freqHz = (r && r.freqHz) || 60;
+    return avgAfter(ser.slice(lo, hi + 1), t.slice(lo, hi + 1), t[hi] - (1000 / freqHz));
+  }
+  let mn = Infinity, mx = -Infinity, sum = 0, n = 0, amx = 0;
+  for (let i = lo; i <= hi; i++) {
+    const v = ser[i];
+    if (v == null || !isFinite(v)) continue;
+    if (v < mn) mn = v;
+    if (v > mx) mx = v;
+    if (Math.abs(v) > amx) amx = Math.abs(v);
+    sum += v; n++;
+  }
+  if (!n) return null;
+  if (metric === 'min') return mn;
+  if (metric === 'max') return mx;
+  if (metric === 'absmax') return amx;
+  if (metric === 'mean') return sum / n;
+  return null;
+}
+
+// Margin is signed and in the signal's own units: positive means room to
+// spare, negative means by how much it failed. relMargin normalises by the
+// limit so a voltage and a time can be ranked against each other, which is
+// what makes "the worst margin in the whole study" a meaningful single number.
+function compareAssert(op, measured, value, value2, tol) {
+  const rel = (m, ref) => {
+    const d = Math.abs(ref) > 1e-12 ? Math.abs(ref) : 1;
+    return m / d;
+  };
+  let margin, pass;
+  switch (op) {
+    case '>=': case '>':
+      margin = measured - value; pass = op === '>' ? measured > value : measured >= value; break;
+    case '<=': case '<':
+      margin = value - measured; pass = op === '<' ? measured < value : measured <= value; break;
+    case 'between': {
+      const lo = Math.min(value, value2), hi = Math.max(value, value2);
+      margin = Math.min(measured - lo, hi - measured);
+      pass = measured >= lo && measured <= hi;
+      break;
+    }
+    case 'approx': {
+      const tolerance = tol == null ? Math.abs(value) * 0.01 : Math.abs(tol);
+      margin = tolerance - Math.abs(measured - value);
+      pass = Math.abs(measured - value) <= tolerance;
+      return { margin, rel: rel(margin, tolerance), pass };
+    }
+    default:
+      return { margin: null, rel: null, pass: false };
+  }
+  return { margin, rel: rel(margin, op === 'between' ? (value2 - value) / 2 : value), pass };
+}
+
 class OpenEMT {
   constructor() {
     this._sandbox = {
@@ -151,6 +347,21 @@ class OpenEMT {
     if (!d || d.webemt !== 1 || !Array.isArray(d.blocks) || !Array.isArray(d.wires)) {
       return { err: 'Not an OpenEMT circuit file (missing webemt:1 / blocks / wires).' };
     }
+    // Subcircuits are expanded here, before anything else looks at the model.
+    // Flattening at load rather than at solve keeps every downstream consumer
+    // (the solver, the study layer, query-by-block-id, coordination) working on
+    // ordinary blocks with no knowledge that a hierarchy ever existed. The
+    // price is that getCircuit() returns the flattened form, which is honest:
+    // the canvas cannot draw a subcircuit yet, so round-tripping a hierarchical
+    // file through the editor would silently lose the structure anyway.
+    let hier = null;
+    if (d.defs || d.blocks.some(b => b.type === 'subckt')) {
+      const fl = flattenCircuit(d);
+      if (fl.err) return { err: 'Subcircuit: ' + fl.err };
+      hier = { defs: Object.keys(d.defs || {}), instances: d.blocks.filter(b => b.type === 'subckt').length,
+        blocksBefore: d.blocks.length, blocksAfter: fl.blocks.length, map: fl.map };
+      d = { ...d, blocks: fl.blocks, wires: fl.wires };
+    }
     const bad = d.blocks.find(b => !this._DEFS[b.type]);
     if (bad) return { err: 'Unknown block type "' + bad.type + '".' };
     // Backfill params added since the file was saved (mirrors ui.js:1363-1370).
@@ -169,8 +380,14 @@ class OpenEMT {
     // the whole point of the case. Explicit runSimulation options still win.
     this._sim = (d.sim && typeof d.sim === 'object') ? { ...d.sim } : null;
     this._pfRan = false;
+    this._hier = hier;
     return { nextId: this.S.nextId, nBlocks: this.S.blocks.length, nWires: this.S.wires.length,
-      vconv: this.S.vconv, sim: this.simSettings() };
+      vconv: this.S.vconv, sim: this.simSettings(),
+      // Only present when the file actually used subcircuits, so the common
+      // case is unchanged. `map` translates "instance/localId" to the flattened
+      // block id, which is what makes query-by-id usable on a hierarchical
+      // model: probe 3 inside instance 7 is map["7/3"].
+      ...(hier ? { subcircuits: hier } : {}) };
   }
 
   // The loaded file's run settings, normalised and validated, or null if the
@@ -430,6 +647,404 @@ class OpenEMT {
     }
 
     return { err: 'Unknown signal "' + sig + '". Use V, Vrms, I, Irms, P, or Q.' };
+  }
+
+  // ---- studies ----
+  //
+  // A run produces a waveform. A decision needs a verdict, and the gap between
+  // them is where an agent adds leverage a person does not have: nobody hand-
+  // runs twelve contingencies and tabulates the margins, but that is exactly
+  // what a design review asks for.
+  //
+  // A study is: a base circuit, a list of cases that each perturb it, and a
+  // list of assertions evaluated against every case. The output is a table of
+  // pass/fail with the margin to each limit, and the single worst margin across
+  // the whole study, which is the number an engineer actually wants.
+  //
+  // The same shape is a validation harness (a case, a criterion, an expected
+  // value), which is deliberate: SPEC section 5 item 9 needs exactly this, so
+  // it is built once and serves both.
+  //
+  //   spec = {
+  //     cases:  [ { name, set: [{block, param, value}], remove: [blockId] } ]
+  //     sweep:  { block, param, values: [...] }        // sugar for cases
+  //     run:    { Tms, dtUs, nph, plotUs, pf: true }
+  //     assert: [ { name, block, signal, metric, op, value, value2,
+  //                 phase, window: {from, to}, tol } ]
+  //   }
+  //
+  // metric: min | max | absmax | final | mean | steady   (steady = last cycle)
+  // op:     >= | <= | > | < | between | approx           (approx uses tol)
+  runStudy(spec) {
+    const s = spec || {};
+    if (!this.S.blocks.length) return { err: 'No circuit loaded. Load one before running a study.' };
+    const asserts = Array.isArray(s.assert) ? s.assert : [];
+    if (!asserts.length) return { err: 'A study needs at least one assertion, or it cannot reach a verdict.' };
+
+    let cases = Array.isArray(s.cases) ? s.cases.slice() : [];
+    if (s.sweep) {
+      const sw = s.sweep;
+      if (sw.block == null || !sw.param || !Array.isArray(sw.values)) {
+        return { err: 'sweep needs { block, param, values: [...] }.' };
+      }
+      sw.values.forEach(v => cases.push({
+        name: sw.param + ' = ' + v,
+        set: [{ block: sw.block, param: sw.param, value: v }],
+      }));
+    }
+    // No cases means "the circuit as it stands", which is a legitimate study of
+    // one: it is how a validation check is written.
+    if (!cases.length) cases = [{ name: 'base' }];
+
+    const base = this.getCircuit();
+    const run = s.run || {};
+    const out = [];
+    try {
+      for (const c of cases) {
+        out.push(this._runStudyCase(base, c, run, asserts));
+      }
+    } finally {
+      // Leave the instance exactly as it was found. Each case mutates the live
+      // circuit (that is how overrides and removals are applied), so without
+      // this the LAST case's perturbation becomes the state every subsequent
+      // study, run and query sees. It bit immediately: a study that removed a
+      // ground made the next study report a singular matrix on a circuit the
+      // caller had never touched. Silent state leakage between studies is
+      // exactly the kind of defect that makes a verdict layer untrustworthy,
+      // so restoring is not best-effort, it is in a finally.
+      this.loadCircuit(JSON.stringify(base));
+    }
+
+    const failed = out.filter(c => !c.pass);
+    // Worst margin across every assertion of every case. Normalised, so a
+    // voltage in volts and a time in ms can be ranked against each other.
+    let worst = null;
+    out.forEach(c => (c.results || []).forEach(r => {
+      if (r.relMargin == null) return;
+      if (!worst || r.relMargin < worst.relMargin) worst = { case: c.name, ...r };
+    }));
+    return {
+      nCases: out.length,
+      passed: out.length - failed.length,
+      failed: failed.length,
+      pass: failed.length === 0,
+      worst,
+      failedCases: failed.map(c => c.name),
+      cases: out,
+    };
+  }
+
+  _runStudyCase(base, c, run, asserts) {
+    const name = c.name || 'case';
+    // Every case starts from a clean reload of the base, so one case cannot
+    // leak a parameter edit or a solved operating point into the next.
+    const lr = this.loadCircuit(JSON.stringify(base));
+    if (lr.err) return { name, pass: false, err: 'Could not rebuild the base circuit: ' + lr.err };
+
+    const applied = [];
+    for (const set of (c.set || [])) {
+      const b = this.S.blocks.find(x => x.id === set.block);
+      if (!b) return { name, pass: false, err: 'No block with id ' + set.block + ' to set ' + set.param + ' on.' };
+      if (!(set.param in b.params)) {
+        return { name, pass: false, err: 'Block ' + set.block + ' (' + b.type + ') has no parameter "'
+          + set.param + '". It has: ' + Object.keys(b.params).join(', ') + '.' };
+      }
+      applied.push(b.type + ' #' + set.block + '.' + set.param + ' = ' + set.value);
+      b.params[set.param] = set.value;
+    }
+    for (const id of (c.remove || [])) {
+      if (!this.S.blocks.some(b => b.id === id)) {
+        return { name, pass: false, err: 'No block with id ' + id + ' to remove.' };
+      }
+      applied.push('removed #' + id);
+      this.removeBlock(id);
+    }
+
+    if (run.pf) {
+      const pf = this.runPowerFlow();
+      if (pf.err) return { name, pass: false, applied, err: 'Power flow: ' + pf.err };
+      if (pf.converged === false) {
+        return { name, pass: false, applied, err: 'Power flow did not converge, so the run would start from a meaningless operating point.' };
+      }
+    }
+    const sim = this.runSimulation({ Tms: run.Tms, dtUs: run.dtUs, nph: run.nph, plotUs: run.plotUs });
+    if (sim.err) return { name, pass: false, applied, err: sim.err };
+
+    const results = asserts.map(a => this._evalAssert(a, sim.runId));
+    return { name, applied, pass: results.every(r => r.pass), stat: sim.stat, results };
+  }
+
+  _evalAssert(a, runId) {
+    const label = a.name || ((a.block != null ? '#' + a.block + ' ' : '') + (a.signal || 'V') + ' '
+      + (a.metric || 'min') + ' ' + (a.op || '>=') + ' ' + a.value);
+    const q = this.query(a.block, a.signal || 'V', { runId });
+    if (q.err) return { assert: label, pass: false, err: q.err };
+    const r = this._runs.get(runId);
+    const t = r.t;
+    // Restrict to a time window when given: "recovers above 0.9 pu within
+    // 200 ms" is a statement about a window, not about the whole run.
+    const w = a.window || {};
+    let i0 = 0, i1 = t.length - 1;
+    if (w.from != null) { while (i0 < t.length && t[i0] < w.from) i0++; }
+    if (w.to != null) { while (i1 >= 0 && t[i1] > w.to) i1--; }
+
+    // Skip the measurement filter's fill region. Vrms, Irms, P and Q are all
+    // windowed over one cycle, and rmsSeries divides by min(i+1, win), so the
+    // first cycle of every one of them ramps up from zero. Those samples are
+    // the filter filling, not the circuit doing anything.
+    //
+    // This matters more here than anywhere else in the API: `metric: 'min'` on
+    // a Vrms signal would otherwise return roughly zero for EVERY case of every
+    // study, and report a confident FAIL that has nothing to do with the
+    // design. A verdict that is wrong for an invisible reason is worse than no
+    // verdict. Reported as `skippedFillMs` rather than done silently, and an
+    // explicit window.from is always respected as-is.
+    let skippedFillMs = null;
+    const WINDOWED = ['Vrms', 'Irms', 'P', 'Q'];
+    if (w.from == null && WINDOWED.includes(a.signal)) {
+      const dtOut = t.length > 1 ? (t[1] - t[0]) : 0;
+      const cyc = 1000 / ((r && r.freqHz) || 60);
+      const fill = dtOut > 0 ? Math.min(t.length - 1, Math.ceil(cyc / dtOut)) : 0;
+      if (fill > i0) { i0 = fill; skippedFillMs = +(t[i0] - t[0]).toFixed(3); }
+    }
+    if (i1 < i0) return { assert: label, pass: false, err: 'Window ' + JSON.stringify(w) + ' selects no samples.' };
+
+    // Reduce across phases to the worst case unless one is named, because a
+    // criterion that holds on two phases and fails on the third has failed.
+    const chosen = a.phase != null ? [q.series[a.phase]].filter(Boolean) : q.series;
+    if (!chosen.length) return { assert: label, pass: false, err: 'Phase ' + a.phase + ' not present on this signal.' };
+    const metric = a.metric || 'min';
+    const per = chosen.map(ser => metricOf(ser, t, i0, i1, metric, q, r));
+    if (per.some(v => v == null || !isFinite(v))) {
+      return { assert: label, pass: false, err: 'Metric "' + metric + '" produced no finite value.' };
+    }
+    // Worst case depends on which way the limit points.
+    const op = a.op || '>=';
+    const measured = (op === '>=' || op === '>') ? Math.min(...per)
+      : (op === '<=' || op === '<') ? Math.max(...per)
+        : per[0];
+    const cmp = compareAssert(op, measured, a.value, a.value2, a.tol);
+    return {
+      assert: label, metric, op, measured, limit: a.value,
+      phase: a.phase == null ? 'worst of ' + chosen.length : a.phase,
+      window: (w.from != null || w.to != null) ? w : null,
+      skippedFillMs,
+      margin: cmp.margin, relMargin: cmp.rel, pass: cmp.pass,
+    };
+  }
+
+  // ---- protection coordination ----
+  //
+  // The elements were already here: relay blocks integrate the IEEE C37.112
+  // inverse-time law and trip a breaker by id. What was missing is the study
+  // that engineers actually deliver, which is not a waveform at all: the
+  // time-current curves of a device chain on one log-log axis, and the
+  // selectivity margin between each adjacent pair at every current of interest.
+  //
+  // The verdict is "selective or not, and by how many milliseconds at what
+  // current". A pair is selective when the downstream device clears far enough
+  // ahead of its upstream backup that the backup never operates for a fault the
+  // downstream one owns. The interval is the coordination time interval (CTI),
+  // conventionally 0.2 to 0.4 s for electromechanical upstream devices and
+  // tighter for static relays; 0.3 s is a common default and is used here
+  // unless the caller says otherwise.
+  //
+  //   spec = {
+  //     chain:    [downstreamId, ..., upstreamId]   // ordered, closest to the fault first
+  //     currents: [amps, ...]                       // where to check the margin
+  //     cti:      0.3                               // required interval, seconds
+  //   }
+  //
+  // The chain is explicit rather than inferred. Coordination is defined by
+  // which device backs up which, and guessing that from topology is exactly the
+  // sort of assumption a protection engineer must not have made for them.
+  coordination(spec) {
+    const s = spec || {};
+    const relays = this.S.blocks.filter(b => b.type === 'relay');
+    if (!relays.length) return { err: 'No overcurrent relay blocks in this circuit; there is nothing to coordinate.' };
+    let chain = Array.isArray(s.chain) ? s.chain.slice() : null;
+    if (!chain) {
+      if (relays.length === 1) chain = [relays[0].id];
+      else {
+        return { err: 'This circuit has ' + relays.length + ' relays (' + relays.map(r => '#' + r.id).join(', ')
+          + '). Give the chain explicitly, ordered from the device closest to the fault to its backup: '
+          + '{ chain: [downstream, ..., upstream] }. Which device backs up which is a protection '
+          + 'decision, not something to infer from topology.' };
+      }
+    }
+    const devices = [];
+    for (const id of chain) {
+      const b = this.S.blocks.find(x => x.id === id);
+      if (!b) return { err: 'No block with id ' + id + '.' };
+      if (b.type !== 'relay') return { err: 'Block ' + id + ' is a ' + b.type + ', not an overcurrent relay.' };
+      const p = b.params;
+      const key = String(p.curve || 'VI').toUpperCase().trim();
+      const cv = TCC_CURVES[key];
+      if (!cv) return { err: 'Relay #' + id + ' has curve "' + p.curve + '"; expected MI, VI or EI.' };
+      devices.push({
+        blockId: id, curve: key, Ipu: Math.max(+p.Ipu, 1e-6), TD: Math.max(+p.TD || 0.5, 0.01),
+        Iinst: +p.Iinst > 0 ? +p.Iinst : null, brkId: p.brkId, cv,
+      });
+    }
+
+    // Currents to evaluate at. Default to a decade either side of the highest
+    // pickup, which is the range a coordination plot conventionally covers.
+    const maxPickup = Math.max(...devices.map(d => d.Ipu));
+    const currents = Array.isArray(s.currents) && s.currents.length
+      ? s.currents.slice().sort((a, b2) => a - b2)
+      : logSpace(maxPickup * 1.1, maxPickup * 20, 12);
+    const cti = s.cti == null ? 0.3 : +s.cti;
+
+    const curves = devices.map(d => ({
+      blockId: d.blockId, curve: d.curve, Ipu: d.Ipu, TD: d.TD, Iinst: d.Iinst, brkId: d.brkId,
+      points: logSpace(d.Ipu * 1.01, Math.max(maxPickup * 20, d.Ipu * 20), 60)
+        .map(I => ({ I, t: tccTime(d, I) })).filter(pt => pt.t != null),
+    }));
+
+    // Pairwise margins, downstream against its immediate backup.
+    const pairs = [];
+    for (let k = 0; k + 1 < devices.length; k++) {
+      const dn = devices[k], up = devices[k + 1];
+      const at = currents.map(I => {
+        const tDn = tccTime(dn, I), tUp = tccTime(up, I);
+        // A device that does not pick up at this current cannot be the one that
+        // clears, and saying "selective" about that is meaningless rather than
+        // reassuring, so it is reported as not-applicable.
+        if (tDn == null || tUp == null) {
+          return { I, tDown: tDn, tUp, interval: null, pass: null,
+            note: tDn == null ? 'downstream #' + dn.blockId + ' does not pick up at this current'
+              : 'upstream #' + up.blockId + ' does not pick up at this current' };
+        }
+        const interval = tUp - tDn;
+        return { I, tDown: tDn, tUp, interval, margin: interval - cti, pass: interval >= cti };
+      });
+      const checked = at.filter(x => x.pass !== null);
+      const worst = checked.length ? checked.reduce((a, b2) => (b2.margin < a.margin ? b2 : a)) : null;
+      pairs.push({
+        downstream: dn.blockId, upstream: up.blockId,
+        pass: checked.length ? checked.every(x => x.pass) : null,
+        worst, at,
+      });
+    }
+    const graded = pairs.filter(p => p.pass !== null);
+    return {
+      cti, nDevices: devices.length,
+      pass: graded.length ? graded.every(p => p.pass) : null,
+      curves, pairs,
+      note: graded.length ? undefined
+        : 'No current in the checked range picks up both devices of any pair, so selectivity was not assessed. Give explicit `currents` covering the fault levels you care about.',
+    };
+  }
+
+  // ---- survivability-weighted availability ----
+  //
+  // Not a reliability tool. A simulator cannot produce five nines: that number
+  // comes from failure rates, repair times and topology, and the data comes
+  // from IEEE 493 or vendor MTBF sheets, none of which is in a circuit file.
+  //
+  // What a simulator can supply is the term every availability calculation
+  // silently sets to 1. A 2N system is scored as 2N because the analyst assumes
+  // the transfer succeeds; real datacenter outages are dominated by the
+  // opposite, the transfer that did not complete. So the caller brings the
+  // statistics and OpenEMT brings the conditional probability they get
+  // multiplied by, taken from a study that actually ran.
+  //
+  //   spec = {
+  //     hoursPerYear: 8766,
+  //     model: <node>
+  //   }
+  //   node = { name, lambda, mttr }                          // a component
+  //        | { name, series:   [node, ...] }                 // all must work
+  //        | { name, parallel: [node, ...],                  // redundancy
+  //            transfer: { successProb } | { study } }
+  //
+  // lambda is failures per year, mttr is hours to repair.
+  //
+  // Redundancy is credited as: you always have the primary, and the BENEFIT of
+  // the standby materialises only when the transfer works.
+  //   A = A_primary + (A_ideal - A_primary) * p
+  // with A_ideal = 1 - prod(1 - Ai), the textbook parallel result. p = 1
+  // reduces to the textbook answer and p = 0 to the primary alone, which is the
+  // physically right pair of limits: a standby you cannot switch to is worth
+  // nothing.
+  availability(spec) {
+    const s = spec || {};
+    if (!s.model) return { err: 'availability needs a { model } describing the topology.' };
+    const H = s.hoursPerYear || 8766; // mean Gregorian year
+    const assumptions = [];
+    const walk = (node, path2) => {
+      if (!node || typeof node !== 'object') return { err: 'Malformed node at ' + path2 };
+      const here = path2 ? path2 + ' / ' + (node.name || '?') : (node.name || 'system');
+      if (Array.isArray(node.series) || Array.isArray(node.parallel)) {
+        const kids = (node.series || node.parallel).map(k => walk(k, here));
+        const bad = kids.find(k => k.err);
+        if (bad) return bad;
+        if (node.series) {
+          const A = kids.reduce((a, k) => a * k.A, 1);
+          return { name: here, kind: 'series', A, of: kids };
+        }
+        const ideal = 1 - kids.reduce((a, k) => a * (1 - k.A), 1);
+        const primary = kids[0].A;
+        const tr = node.transfer || {};
+        let p, evidence;
+        if (tr.study) {
+          // The join. A study that ran and passed makes the transition
+          // verified; one that failed means the redundancy does not exist in
+          // practice, however the block diagram is drawn.
+          const st = tr.study;
+          p = st.pass ? 1 : 0;
+          evidence = 'EMT study: ' + (st.passed != null ? st.passed + ' of ' + st.nCases + ' cases passed' : String(st.pass))
+            + (st.worst ? ', worst margin ' + (+st.worst.margin).toPrecision(3) + ' on "' + st.worst.assert + '"' : '');
+        } else if (tr.successProb != null) {
+          p = +tr.successProb;
+          evidence = null;
+        } else {
+          p = 1;
+          evidence = null;
+        }
+        assumptions.push({
+          at: here,
+          transferSuccessProbability: p,
+          verified: !!tr.study,
+          evidence: evidence || (tr.successProb != null
+            ? 'ASSUMED: supplied as a number, not backed by a simulation'
+            : 'ASSUMED: no transfer probability given, so the redundancy is credited in full'),
+        });
+        const A = primary + (ideal - primary) * p;
+        return { name: here, kind: 'parallel', A, idealA: ideal, primaryA: primary, transferP: p, of: kids };
+      }
+      const lambda = +node.lambda, mttr = +node.mttr;
+      if (!isFinite(lambda) || !isFinite(mttr)) {
+        return { err: 'Component "' + here + '" needs numeric lambda (failures/year) and mttr (hours).' };
+      }
+      const U = Math.min(1, lambda * mttr / H);
+      return { name: here, kind: 'component', lambda, mttr, A: 1 - U, U };
+    };
+    const root = walk(s.model, '');
+    if (root.err) return { err: root.err };
+    const A = root.A;
+    const downMin = (1 - A) * H * 60;
+    const unverified = assumptions.filter(a => !a.verified);
+    return {
+      availability: A,
+      nines: A >= 1 ? Infinity : -Math.log10(1 - A),
+      downtimeMinutesPerYear: downMin,
+      downtimeHoursPerYear: downMin / 60,
+      hoursPerYear: H,
+      tree: root,
+      assumptions,
+      // The honest headline. An availability figure whose transfer terms were
+      // assumed is the analyst's own assumption reflected back at them, and
+      // saying so is the whole point of computing it here rather than in a
+      // spreadsheet.
+      verdict: assumptions.length === 0
+        ? 'No redundancy in this model, so no transfer assumptions were needed.'
+        : unverified.length === 0
+          ? 'Every redundancy transition in this model is backed by an EMT study that ran.'
+          : unverified.length + ' of ' + assumptions.length + ' redundancy transitions are ASSUMED, not '
+            + 'simulated. Those are the terms this figure is most sensitive to, and the ones real '
+            + 'outages come from.',
+    };
   }
 
   listExamples() {
