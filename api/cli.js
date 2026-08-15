@@ -215,6 +215,47 @@ program.command('run')
     }
   });
 
+// ---- avail ----
+program.command('avail')
+  .description('Availability of a redundancy model, weighted by EMT-verified transfer success.')
+  .argument('<file>', 'circuit JSON (webemt:1), or the name of a shipped example')
+  .requiredOption('--model <path-or-json>', 'reliability model: a .json file path, or inline JSON')
+  .option('--study <path-or-json>', 'study spec to run; its verdict scores every transfer marked "verify": true')
+  .option('--json', 'Emit machine-readable JSON.')
+  .action((file, opts) => {
+    const em = new OpenEMT();
+    const lr = resolveCase(em, file);
+    if (lr && lr.err) fail(lr.err);
+    const read = raw => {
+      try { return /^\s*[{[]/.test(raw) ? JSON.parse(raw) : JSON.parse(require('fs').readFileSync(raw, 'utf8')); }
+      catch (e) { fail('Could not read ' + raw + ': ' + e.message); return null; }
+    };
+    const model = read(opts.model);
+    if (opts.study) {
+      const st = em.runStudy(read(opts.study));
+      if (st && st.err) fail(st.err);
+      // Attach the verdict to every transfer that asked to be verified.
+      (function attach(n) {
+        if (!n || typeof n !== 'object') return;
+        if (n.transfer && n.transfer.verify) n.transfer = { study: st };
+        (n.series || n.parallel || []).forEach(attach);
+      })(model);
+    }
+    const r = em.availability({ model, hoursPerYear: opts.hours });
+    if (r && r.err) fail(r.err);
+    if (opts.json) { emit(r, true); return; }
+    console.log('availability: ' + r.availability.toFixed(7)
+      + '  (' + r.nines.toFixed(2) + ' nines, ' + r.downtimeMinutesPerYear.toFixed(1) + ' min/year)');
+    console.log('');
+    console.log(r.verdict);
+    if (r.assumptions.length) {
+      console.log('');
+      console.log('transfer assumptions:');
+      r.assumptions.forEach(a => console.log('  ' + (a.verified ? '[verified] ' : '[ASSUMED]  ')
+        + a.at + '  p=' + a.transferSuccessProbability + '  ' + a.evidence));
+    }
+  });
+
 // ---- coord ----
 program.command('coord')
   .description('Protective device coordination: time-current curves and selectivity margins.')

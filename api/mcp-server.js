@@ -169,6 +169,20 @@ const TOOLS = [
     },
   },
   {
+    name: 'availability',
+    description: 'Availability of a redundancy model, with each redundancy credited only as far as its transfer is shown to work. NOT a reliability tool: the failure rates and repair times come from the caller (IEEE 493, vendor MTBF), because no simulator can produce them. What this adds is the term availability math silently sets to 1. A 2N system is scored as 2N because the analyst assumes the transfer succeeds, and real datacenter outages are dominated by the transfer that did not complete. Pass a run_study result as transfer.study and the redundancy is credited only if that study passed. Every transfer without a study is reported as ASSUMED.',
+    inputSchema: {
+      type: 'object', required: ['model'],
+      properties: {
+        hoursPerYear: { type: 'number', default: 8766 },
+        model: {
+          type: 'object',
+          description: 'A reliability block diagram node. Leaf: {name, lambda (failures/year), mttr (hours)}. Series: {name, series:[node,...]} (all must work). Redundant: {name, parallel:[node,...], transfer:{successProb} or {study}}. Redundancy is credited as A_primary + (A_ideal - A_primary)*p, so p=1 is the textbook parallel result and p=0 is worth exactly the primary alone.',
+        },
+      },
+    },
+  },
+  {
     name: 'coordination',
     description: 'Protective device coordination study. Returns the IEEE C37.112 time-current curve of each overcurrent relay in a chain and the selectivity margin between each adjacent pair at the currents you name. The verdict is "selective or not, and by how many milliseconds at what current". Inverse curves converge at high current, so a pair that coordinates at moderate fault levels often does not at maximum fault current, which is the usual finding. The chain must be given explicitly, downstream device first: which device backs up which is a protection decision and is not inferred from topology.',
     inputSchema: {
@@ -260,6 +274,11 @@ async function handleCall(req) {
         if (!a.file && !a.text) { r = err('Provide either "file" (path to a .raw) or "text" (raw contents).'); break; }
         const ir = em.importCase(a.file || a.text);
         if (ir && ir.err) r = err(ir.err); else r = ok(ir);
+        break;
+      }
+      case 'availability': {
+        const ar = em.availability({ model: a.model, hoursPerYear: a.hoursPerYear });
+        if (ar && ar.err) r = err(ar.err); else r = ok(ar);
         break;
       }
       case 'coordination': {

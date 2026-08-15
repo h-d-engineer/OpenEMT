@@ -813,6 +813,117 @@ class OpenEMT {
     };
   }
 
+  // ---- survivability-weighted availability ----
+  //
+  // Not a reliability tool. A simulator cannot produce five nines: that number
+  // comes from failure rates, repair times and topology, and the data comes
+  // from IEEE 493 or vendor MTBF sheets, none of which is in a circuit file.
+  //
+  // What a simulator can supply is the term every availability calculation
+  // silently sets to 1. A 2N system is scored as 2N because the analyst assumes
+  // the transfer succeeds; real datacenter outages are dominated by the
+  // opposite, the transfer that did not complete. So the caller brings the
+  // statistics and OpenEMT brings the conditional probability they get
+  // multiplied by, taken from a study that actually ran.
+  //
+  //   spec = {
+  //     hoursPerYear: 8766,
+  //     model: <node>
+  //   }
+  //   node = { name, lambda, mttr }                          // a component
+  //        | { name, series:   [node, ...] }                 // all must work
+  //        | { name, parallel: [node, ...],                  // redundancy
+  //            transfer: { successProb } | { study } }
+  //
+  // lambda is failures per year, mttr is hours to repair.
+  //
+  // Redundancy is credited as: you always have the primary, and the BENEFIT of
+  // the standby materialises only when the transfer works.
+  //   A = A_primary + (A_ideal - A_primary) * p
+  // with A_ideal = 1 - prod(1 - Ai), the textbook parallel result. p = 1
+  // reduces to the textbook answer and p = 0 to the primary alone, which is the
+  // physically right pair of limits: a standby you cannot switch to is worth
+  // nothing.
+  availability(spec) {
+    const s = spec || {};
+    if (!s.model) return { err: 'availability needs a { model } describing the topology.' };
+    const H = s.hoursPerYear || 8766; // mean Gregorian year
+    const assumptions = [];
+    const walk = (node, path2) => {
+      if (!node || typeof node !== 'object') return { err: 'Malformed node at ' + path2 };
+      const here = path2 ? path2 + ' / ' + (node.name || '?') : (node.name || 'system');
+      if (Array.isArray(node.series) || Array.isArray(node.parallel)) {
+        const kids = (node.series || node.parallel).map(k => walk(k, here));
+        const bad = kids.find(k => k.err);
+        if (bad) return bad;
+        if (node.series) {
+          const A = kids.reduce((a, k) => a * k.A, 1);
+          return { name: here, kind: 'series', A, of: kids };
+        }
+        const ideal = 1 - kids.reduce((a, k) => a * (1 - k.A), 1);
+        const primary = kids[0].A;
+        const tr = node.transfer || {};
+        let p, evidence;
+        if (tr.study) {
+          // The join. A study that ran and passed makes the transition
+          // verified; one that failed means the redundancy does not exist in
+          // practice, however the block diagram is drawn.
+          const st = tr.study;
+          p = st.pass ? 1 : 0;
+          evidence = 'EMT study: ' + (st.passed != null ? st.passed + ' of ' + st.nCases + ' cases passed' : String(st.pass))
+            + (st.worst ? ', worst margin ' + (+st.worst.margin).toPrecision(3) + ' on "' + st.worst.assert + '"' : '');
+        } else if (tr.successProb != null) {
+          p = +tr.successProb;
+          evidence = null;
+        } else {
+          p = 1;
+          evidence = null;
+        }
+        assumptions.push({
+          at: here,
+          transferSuccessProbability: p,
+          verified: !!tr.study,
+          evidence: evidence || (tr.successProb != null
+            ? 'ASSUMED: supplied as a number, not backed by a simulation'
+            : 'ASSUMED: no transfer probability given, so the redundancy is credited in full'),
+        });
+        const A = primary + (ideal - primary) * p;
+        return { name: here, kind: 'parallel', A, idealA: ideal, primaryA: primary, transferP: p, of: kids };
+      }
+      const lambda = +node.lambda, mttr = +node.mttr;
+      if (!isFinite(lambda) || !isFinite(mttr)) {
+        return { err: 'Component "' + here + '" needs numeric lambda (failures/year) and mttr (hours).' };
+      }
+      const U = Math.min(1, lambda * mttr / H);
+      return { name: here, kind: 'component', lambda, mttr, A: 1 - U, U };
+    };
+    const root = walk(s.model, '');
+    if (root.err) return { err: root.err };
+    const A = root.A;
+    const downMin = (1 - A) * H * 60;
+    const unverified = assumptions.filter(a => !a.verified);
+    return {
+      availability: A,
+      nines: A >= 1 ? Infinity : -Math.log10(1 - A),
+      downtimeMinutesPerYear: downMin,
+      downtimeHoursPerYear: downMin / 60,
+      hoursPerYear: H,
+      tree: root,
+      assumptions,
+      // The honest headline. An availability figure whose transfer terms were
+      // assumed is the analyst's own assumption reflected back at them, and
+      // saying so is the whole point of computing it here rather than in a
+      // spreadsheet.
+      verdict: assumptions.length === 0
+        ? 'No redundancy in this model, so no transfer assumptions were needed.'
+        : unverified.length === 0
+          ? 'Every redundancy transition in this model is backed by an EMT study that ran.'
+          : unverified.length + ' of ' + assumptions.length + ' redundancy transitions are ASSUMED, not '
+            + 'simulated. Those are the terms this figure is most sensitive to, and the ones real '
+            + 'outages come from.',
+    };
+  }
+
   listExamples() {
     const dir = path.join(ROOT, 'examples');
     return fs.readdirSync(dir).filter(f => f.endsWith('.json')).map(f => f.replace(/\.json$/, ''));

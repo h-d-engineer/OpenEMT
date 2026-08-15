@@ -661,7 +661,7 @@ function approxPct(sim, exp) { return Math.abs(sim - exp) / Math.abs(exp) * 100;
     try {
       await client.connect(tr);
       const tools = (await client.listTools()).tools.map(t => t.name);
-      check('MCP exposes 16 tools', tools.length === 16, 'n=' + tools.length);
+      check('MCP exposes 17 tools', tools.length === 17, 'n=' + tools.length);
       // The server used to restate its version as a literal and had already
       // drifted: it announced 0.1.0 after the package shipped 0.1.1. Assert it
       // against package.json so the next bump cannot silently repeat that.
@@ -688,6 +688,82 @@ function approxPct(sim, exp) { return Math.abs(sim - exp) / Math.abs(exp) * 100;
       await client.close();
     }
   });
+}
+
+// ---- survivability-weighted availability ----
+{
+  const em = new OpenEMT();
+  em.loadExample('central_ups_sag');
+  const model = transfer => ({
+    name: 'IT load',
+    series: [
+      { name: 'utility feed', lambda: 1.2, mttr: 4 },
+      { name: 'UPS chain', transfer, parallel: [
+        { name: 'rectifier + inverter', lambda: 0.5, mttr: 8 },
+        { name: 'battery', lambda: 0.3, mttr: 6 },
+      ] },
+    ],
+  });
+  // A single component: U = lambda*mttr/hours. 1.2/yr at 4 h = 4.8 h down of
+  // 8766, so A = 0.99945243.
+  const one = em.availability({ model: { name: 'feed', lambda: 1.2, mttr: 4 } });
+  check('component availability is lambda*mttr/hours',
+    Math.abs(one.availability - (1 - 1.2 * 4 / 8766)) < 1e-12, 'A=' + one.availability);
+
+  // The two limits that make the redundancy credit defensible: a transfer that
+  // always works gives the textbook parallel result, and one that never works
+  // is worth exactly the primary alone.
+  const ideal = em.availability({ model: model({ successProb: 1 }) });
+  const none = em.availability({ model: model({ successProb: 0 }) });
+  const grp = r => r.tree.of[1];
+  check('p=1 reduces to the textbook parallel result',
+    Math.abs(grp(ideal).A - grp(ideal).idealA) < 1e-12, grp(ideal).A + ' vs ' + grp(ideal).idealA);
+  check('p=0 is worth exactly the primary alone',
+    Math.abs(grp(none).A - grp(none).primaryA) < 1e-12, grp(none).A + ' vs ' + grp(none).primaryA);
+  check('a transfer that cannot happen costs availability',
+    none.availability < ideal.availability, none.availability + ' vs ' + ideal.availability);
+
+  // The join this exists for. The same block diagram, scored against a study
+  // that ran: passing keeps the redundancy, failing removes it.
+  const good = em.runStudy({ run: { Tms: 400, pf: true },
+    assert: [{ name: 'IT holds 97%', block: 15, signal: 'Vrms', metric: 'min', op: '>=', value: 0.97 * 277 }] });
+  const bad = em.runStudy({ run: { Tms: 400, pf: true },
+    assert: [{ name: 'IT holds 300 V', block: 15, signal: 'Vrms', metric: 'min', op: '>=', value: 300 }] });
+  check('the demonstration studies disagree as intended', good.pass === true && bad.pass === false,
+    'good=' + good.pass + ' bad=' + bad.pass);
+  const vOk = em.availability({ model: model({ study: good }) });
+  const vNo = em.availability({ model: model({ study: bad }) });
+  check('a verified-good transfer earns the full redundancy',
+    Math.abs(vOk.availability - ideal.availability) < 1e-12, vOk.availability);
+  check('a verified-failing transfer removes the redundancy',
+    Math.abs(vNo.availability - none.availability) < 1e-12, vNo.availability);
+  check('the failed transfer costs real downtime',
+    vNo.downtimeMinutesPerYear - vOk.downtimeMinutesPerYear > 200,
+    (vNo.downtimeMinutesPerYear - vOk.downtimeMinutesPerYear).toFixed(0) + ' min/yr');
+
+  // Honesty about provenance is the point of computing this here rather than in
+  // a spreadsheet, so it has to be reported, not merely available.
+  check('an assumed transfer is flagged as assumed',
+    /ASSUMED/.test(em.availability({ model: model({}) }).verdict), em.availability({ model: model({}) }).verdict);
+  check('a bare number is still flagged as assumed',
+    em.availability({ model: model({ successProb: 0.9 }) }).assumptions[0].verified === false);
+  check('a study-backed transfer is reported as verified with its evidence',
+    vOk.assumptions[0].verified === true && /cases passed/.test(vOk.assumptions[0].evidence),
+    vOk.assumptions[0].evidence);
+  check('a model with no redundancy needs no transfer assumption',
+    /No redundancy/.test(em.availability({ model: { name: 'feed', lambda: 1, mttr: 2 } }).verdict));
+
+  // Nines and downtime must agree with each other and with the availability.
+  check('nines and downtime agree with the availability',
+    Math.abs(vOk.nines - (-Math.log10(1 - vOk.availability))) < 1e-12
+      && Math.abs(vOk.downtimeMinutesPerYear - (1 - vOk.availability) * 8766 * 60) < 1e-6,
+    vOk.nines + ' / ' + vOk.downtimeMinutesPerYear);
+
+  check('a malformed component is refused',
+    /needs numeric lambda/.test(em.availability({ model: { name: 'x', lambda: 'oops', mttr: 1 } }).err || ''),
+    em.availability({ model: { name: 'x', lambda: 'oops', mttr: 1 } }).err);
+  check('a missing model is refused', /needs a \{ model \}/.test(em.availability({}).err || ''),
+    em.availability({}).err);
 }
 
 // ---- protection coordination ----
