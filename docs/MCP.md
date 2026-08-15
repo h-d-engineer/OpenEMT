@@ -184,6 +184,37 @@ and defaults with no hand-maintained duplication):
   block ID from a simulation run. By default returns only the steady-state
   last-cycle average per phase; set `tail=false` for the full time series.
 
+The tools above return waveforms. The three below return **verdicts**, which is
+what a design decision actually needs:
+
+- `run_study`: run a set of cases (parameter overrides, removed blocks for N-1,
+  or a sweep) and evaluate assertions with margins against every one. Returns a
+  pass/fail table plus the single worst margin across the study. This is the
+  tool for contingency screening, design sizing, and regression checks, and it
+  is the one an agent has a real advantage at: a person runs the five cases they
+  thought of, an agent runs the cross product. Assertions on `Vrms`/`Irms`/`P`/`Q`
+  automatically skip the first cycle, which is the measurement filter filling
+  rather than the circuit doing anything, and say how much they skipped.
+- `coordination`: protective device coordination. Returns each relay's IEEE
+  C37.112 time-current curve and the selectivity margin between adjacent pairs
+  at the currents you name. The chain must be given explicitly, downstream
+  first, because which device backs up which is a protection decision and is not
+  inferred from topology.
+- `availability`: availability of a redundancy model, with each redundancy
+  credited only as far as its transfer is shown to work. **Not a reliability
+  tool**: failure rates and repair times come from you (IEEE 493, vendor MTBF),
+  because no simulator can produce them. What this adds is the term availability
+  math silently sets to 1. Pass a `run_study` result as `transfer.study` and the
+  redundancy is credited only if that study passed; every transfer without one
+  is reported as ASSUMED.
+
+Circuits may also use **subcircuits**: a `defs` map of reusable definitions with
+declared ports and parameters, instantiated by a `subckt` block. They are
+flattened when the circuit loads, so every tool above sees ordinary blocks, and
+the load result carries a map from `"instance/localId"` to the flattened block
+id so `query_results` still works by ID. The canvas cannot draw a subcircuit
+yet, so this is an agent-side capability for now.
+
 Look up probe, bus, and branch signals by block ID, never positional index.
 For machine initialization, call `run_power_flow` first so the simulation
 starts at the operating point instead of swinging in cold (see the "machine

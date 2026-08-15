@@ -3867,3 +3867,55 @@ now a fixed-position fallback, used when the API is missing and equally when it
 is present but rejects or throws. It uses `100dvh` rather than `100vh`, since on
 mobile Safari `100vh` is the tallest possible viewport and would hide the bottom
 of the canvas under the browser chrome.
+
+## 2026-08-14: the layers above the solver (study, coordination, availability, subcircuits)
+
+Acting on the architecture brief: the solver produces a waveform, a decision
+needs a verdict, and the gap between them is three layers. Four features, all in
+`api/core.js` with CLI and MCP fronts, none touching `src/`. The programmable
+logic block and arc flash from that brief are deliberately not built, the first
+by the user's decision and the second permanently.
+
+**Studies emit verdicts, and their failure modes are the dangerous kind.**
+`runStudy` takes cases, runs each, and evaluates assertions with margins. Two
+defects surfaced by using it rather than reading it, both of which would have
+made it worse than nothing. Vrms/Irms/P/Q are windowed over a cycle and ramp
+from zero while the filter fills, so `metric:'min'` returned about zero for
+every case and reported a confident FAIL about nothing; the fill region is now
+excluded and the excluded span reported. Worse, a study permanently mutated the
+loaded circuit, so the last case's perturbation became everyone else's starting
+point and a study that removed a ground made the NEXT study report a singular
+matrix on an untouched circuit. Restoring the base is in a `finally`.
+
+**Coordination refuses to guess the chain.** Which device backs up which is a
+protection decision, so the chain is explicit and downstream-first rather than
+inferred from topology. A device below pickup reports "not applicable" rather
+than a large time, because a relay that cannot operate is not a slow one, and a
+pair where nothing picks up reports that selectivity was not assessed instead of
+a reassuring green. The worked chain reproduces the finding the study exists
+for: selective from 800 to 3200 A, then 0.256 s against a 0.3 s CTI at 6400 A,
+because inverse curves converge.
+
+**Availability owns the term the statistics assume.** Not a reliability tool:
+failure rates and repair times come from the caller. What OpenEMT adds is the
+conditional success of each redundancy transition, taken from a study that ran.
+Redundancy is credited as `A_primary + (A_ideal - A_primary) * p`, tested at
+both limits, so p=1 is the textbook parallel result and p=0 is worth exactly the
+primary alone. On the worked UPS model a transfer the EMT run says fails costs
+240 minutes a year that a block diagram credits for free. Every transfer without
+a study is reported as ASSUMED, which is the entire reason to compute this here
+rather than in a spreadsheet.
+
+**Subcircuits flatten at load.** Everything downstream keeps working on ordinary
+blocks, and the load result carries an "instance/localId" map so query-by-id
+still works. Verified bit-identically against the same circuit built by hand.
+This is the agent path: an agent composes JSON. The canvas cannot draw a
+subcircuit, so `getCircuit()` returns the flattened form.
+
+**Two guards, and a lesson about guards repeated.** The C37.112 constants are
+duplicated in `core.js` rather than reached out of the vm sandbox, so a test
+compares the two tables. Its first version used a regex that survived three
+layers of escaping as `MI:s*{...}`, matched nothing, reported null for both
+tables and passed: a guard that could never fail, which is the third time this
+pattern has appeared in this project. It is now regex-free. Break every guard
+before believing it, and prefer a parser that cannot silently match nothing.
