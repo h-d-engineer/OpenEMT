@@ -168,6 +168,60 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: 'run_study',
+    description: 'Run a multi-case study and get a VERDICT instead of a waveform. Each case perturbs the loaded circuit (parameter overrides, removed blocks, or a parameter sweep), runs it, and evaluates assertions with margins. Returns a pass/fail table plus the single worst margin across the study. Use this for contingency screening ("does the load ride through any single failure"), design sizing ("how small can the battery be"), and regression checks. Assertions on Vrms/Irms/P/Q automatically skip the first cycle, which is the measurement filter filling rather than circuit behaviour.',
+    inputSchema: {
+      type: 'object', required: ['assert'],
+      properties: {
+        assert: {
+          type: 'array', description: 'Criteria evaluated on every case. All must hold for a case to pass.',
+          items: {
+            type: 'object', required: ['block', 'op', 'value'],
+            properties: {
+              name: { type: 'string', description: 'Human-readable label for the report.' },
+              block: { type: 'integer', description: 'Block ID to measure (never a positional index).' },
+              signal: { type: 'string', enum: ['V', 'Vrms', 'f', 'I', 'Irms', 'P', 'Q'], default: 'V' },
+              metric: { type: 'string', enum: ['min', 'max', 'absmax', 'final', 'mean', 'steady'], default: 'min',
+                description: 'steady = last-cycle average, which is where it settled; final = the last sample, which on an AC waveform may be a zero crossing.' },
+              op: { type: 'string', enum: ['>=', '<=', '>', '<', 'between', 'approx'] },
+              value: { type: 'number' },
+              value2: { type: 'number', description: 'Upper bound for "between".' },
+              tol: { type: 'number', description: 'Tolerance for "approx" (default 1% of value).' },
+              phase: { type: 'integer', description: 'Phase index. Omit to take the worst phase, which is usually what a criterion means.' },
+              window: { type: 'object', description: 'Restrict to a time window in ms, e.g. {from: 210, to: 295}.',
+                properties: { from: { type: 'number' }, to: { type: 'number' } } },
+            },
+          },
+        },
+        cases: {
+          type: 'array', description: 'Explicit cases. Omit (and omit sweep) to study the circuit as it stands.',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              set: { type: 'array', description: 'Parameter overrides for this case.',
+                items: { type: 'object', required: ['block', 'param', 'value'],
+                  properties: { block: { type: 'integer' }, param: { type: 'string' }, value: {} } } },
+              remove: { type: 'array', items: { type: 'integer' }, description: 'Block IDs to delete, for N-1 contingencies.' },
+            },
+          },
+        },
+        sweep: {
+          type: 'object', description: 'Sugar for a one-parameter sweep; generates one case per value.',
+          required: ['block', 'param', 'values'],
+          properties: { block: { type: 'integer' }, param: { type: 'string' }, values: { type: 'array' } },
+        },
+        run: {
+          type: 'object', description: 'Run settings applied to every case.',
+          properties: {
+            Tms: { type: 'number' }, dtUs: { type: 'number' }, nph: { type: 'integer' }, plotUs: { type: 'number' },
+            pf: { type: 'boolean', description: 'Solve the power flow before each case (the "Init from PF" behaviour).' },
+          },
+        },
+      },
+    },
+  },
 ];
 
 async function handleCall(req) {
@@ -192,6 +246,11 @@ async function handleCall(req) {
         if (!a.file && !a.text) { r = err('Provide either "file" (path to a .raw) or "text" (raw contents).'); break; }
         const ir = em.importCase(a.file || a.text);
         if (ir && ir.err) r = err(ir.err); else r = ok(ir);
+        break;
+      }
+      case 'run_study': {
+        const sr = em.runStudy({ assert: a.assert, cases: a.cases, sweep: a.sweep, run: a.run });
+        if (sr && sr.err) r = err(sr.err); else r = ok(sr);
         break;
       }
       case 'get_circuit': r = ok(em.getCircuit()); break;

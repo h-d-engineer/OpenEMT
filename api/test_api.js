@@ -661,7 +661,7 @@ function approxPct(sim, exp) { return Math.abs(sim - exp) / Math.abs(exp) * 100;
     try {
       await client.connect(tr);
       const tools = (await client.listTools()).tools.map(t => t.name);
-      check('MCP exposes 14 tools', tools.length === 14, 'n=' + tools.length);
+      check('MCP exposes 15 tools', tools.length === 15, 'n=' + tools.length);
       // The server used to restate its version as a literal and had already
       // drifted: it announced 0.1.0 after the package shipped 0.1.1. Assert it
       // against package.json so the next bump cannot silently repeat that.
@@ -688,6 +688,132 @@ function approxPct(sim, exp) { return Math.abs(sim - exp) / Math.abs(exp) * 100;
       await client.close();
     }
   });
+}
+
+// ---- study layer ----
+// The study layer emits verdicts rather than waveforms, so its own failure
+// modes are the dangerous kind: a confident PASS or FAIL for a reason that has
+// nothing to do with the circuit.
+{
+  const em = new OpenEMT();
+  em.loadExample('central_ups_sag');
+
+  // The trap this layer was born with. Vrms, Irms, P and Q are windowed over a
+  // cycle and ramp from zero while the filter fills, so metric:'min' over a
+  // whole run returns roughly zero for every case and reports a confident FAIL
+  // about nothing. Assert the fill region is excluded and that the excluded
+  // span is reported rather than hidden.
+  const fill = em.runStudy({
+    run: { Tms: 200, pf: true },
+    assert: [{ name: 'fill', block: 15, signal: 'Vrms', metric: 'min', op: '>=', value: 0 }],
+  });
+  check('study skips the RMS fill region', fill.cases[0].results[0].measured > 200,
+    'measured=' + fill.cases[0].results[0].measured);
+  check('study reports the skipped fill span', fill.cases[0].results[0].skippedFillMs > 10,
+    'skippedFillMs=' + fill.cases[0].results[0].skippedFillMs);
+
+  // A sweep must actually perturb the model. Guarding this because a sweep that
+  // silently fails to apply produces identical results across every case, which
+  // reads as a robust design rather than as a broken harness.
+  const sw = em.runStudy({
+    run: { Tms: 300, pf: true },
+    sweep: { block: 21, param: 'Rf', values: [1.0, 0.05] },
+    assert: [{ name: 'bus', block: 13, signal: 'Vrms', metric: 'min', op: '>=', value: 0 }],
+  });
+  const [m1, m2] = sw.cases.map(c => c.results[0].measured);
+  check('sweep overrides reach the solver', Math.abs(m1 - m2) > 100, m1.toFixed(1) + ' vs ' + m2.toFixed(1));
+  check('sweep records what it applied', /Rf = 0.05/.test((sw.cases[1].applied || []).join(',')),
+    JSON.stringify(sw.cases[1].applied));
+
+  // The documented behaviour of this case: the battery catches the DC link at
+  // about 360 V and the IT load rides through. If the study layer cannot
+  // reproduce the example's own README, it is not measuring what it claims.
+  const rt = em.runStudy({
+    run: { Tms: 500, pf: true },
+    sweep: { block: 21, param: 'Rf', values: [1.0, 0.3, 0.05] },
+    assert: [
+      { name: 'IT rides through', block: 15, signal: 'Vrms', metric: 'min', op: '>=', value: 0.97 * 277 },
+      { name: 'DC link held', block: 14, signal: 'Vrms', metric: 'min', op: '>=', value: 280, window: { from: 210, to: 295 } },
+    ],
+  });
+  check('ride-through study passes every fault severity', rt.pass === true,
+    rt.passed + '/' + rt.nCases + ' failed=' + JSON.stringify(rt.failedCases));
+  check('DC link holds near the documented 360 V',
+    Math.abs(rt.cases[2].results[1].measured - 360) < 5, 'measured=' + rt.cases[2].results[1].measured);
+  check('study reports a worst margin', rt.worst && rt.worst.relMargin > 0 && rt.worst.relMargin < 1,
+    'relMargin=' + (rt.worst && rt.worst.relMargin));
+
+  // A failing criterion must fail, with a negative margin. A verdict layer that
+  // cannot say no is decoration.
+  const nf = em.runStudy({
+    run: { Tms: 200, pf: true },
+    assert: [{ name: 'impossible', block: 15, signal: 'Vrms', metric: 'min', op: '>=', value: 1e6 }],
+  });
+  check('study fails a criterion that cannot hold', nf.pass === false && nf.cases[0].results[0].margin < 0,
+    'margin=' + nf.cases[0].results[0].margin);
+
+  // N-1. Losing the utility source is the contingency this facility exists to
+  // survive, so the verdict should be that the IT bus stays up: block 1 is the
+  // 2.4 kV utility src, and the UPS carries the load without it. This is the
+  // study layer reproducing the point of the case, not just running.
+  const n1 = em.runStudy({
+    run: { Tms: 200 },
+    cases: [{ name: 'lose utility', remove: [1] }],
+    assert: [{ name: 'IT bus stays up', block: 15, signal: 'Vrms', metric: 'min', op: '>=', value: 200 }],
+  });
+  check('N-1 removal is applied and reported', /removed #1/.test((n1.cases[0].applied || []).join(',')),
+    JSON.stringify(n1.cases[0].applied));
+  check('UPS rides through loss of the utility source', n1.pass === true,
+    'measured=' + n1.cases[0].results[0].measured);
+
+  // The other direction: a contingency that leaves the circuit unsolvable must
+  // report the solver's reason, not pass by default. Ground #18 is load bearing.
+  const dead = em.runStudy({
+    run: { Tms: 100 },
+    cases: [{ name: 'no ground 18', remove: [18] }],
+    assert: [{ name: 'any', block: 15, signal: 'Vrms', metric: 'min', op: '>=', value: 1 }],
+  });
+  check('an unsolvable contingency fails with the solver reason',
+    dead.pass === false && /[Ss]ingular/.test(dead.cases[0].err || ''), dead.cases[0].err);
+
+  // Operator coverage and the between/approx forms used for validation checks.
+  const ops = em.runStudy({
+    run: { Tms: 200, pf: true },
+    assert: [
+      { name: 'between', block: 15, signal: 'Vrms', metric: 'steady', op: 'between', value: 250, value2: 300 },
+      { name: 'approx', block: 15, signal: 'Vrms', metric: 'steady', op: 'approx', value: 277, tol: 10 },
+      { name: 'max', block: 15, signal: 'Vrms', metric: 'max', op: '<=', value: 400 },
+    ],
+  });
+  check('between / approx / max operators all evaluate', ops.cases[0].results.every(r => r.pass),
+    JSON.stringify(ops.cases[0].results.map(r => r.assert + '=' + r.pass)));
+
+  // A study must leave the instance exactly as it found it. Each case mutates
+  // the live circuit to apply its overrides, so without an explicit restore the
+  // last case's perturbation silently becomes everyone else's starting point.
+  // Caught in development: a study that removed a ground made the NEXT study
+  // report a singular matrix on a circuit the caller had never touched.
+  const before = JSON.stringify(em.getCircuit());
+  em.runStudy({
+    run: { Tms: 100 },
+    cases: [{ name: 'strip a ground', remove: [18] }, { name: 'retune', set: [{ block: 21, param: 'Rf', value: 9 }] }],
+    assert: [{ block: 15, signal: 'Vrms', metric: 'min', op: '>=', value: 1 }],
+  });
+  check('a study restores the circuit it started from', JSON.stringify(em.getCircuit()) === before,
+    'circuit differs after the study');
+  const afterStudy = em.runStudy({
+    run: { Tms: 200, pf: true },
+    assert: [{ block: 15, signal: 'Vrms', metric: 'steady', op: 'between', value: 250, value2: 300 }],
+  });
+  check('a later study is unaffected by an earlier one', afterStudy.pass === true,
+    afterStudy.cases[0].err || JSON.stringify(afterStudy.cases[0].results));
+
+  // Bad input must be refused clearly rather than producing an empty verdict.
+  check('study without assertions is refused', !!em.runStudy({ run: { Tms: 50 } }).err, 'no err');
+  const badp = em.runStudy({ run: { Tms: 50 }, cases: [{ name: 'x', set: [{ block: 21, param: 'nope', value: 1 }] }],
+    assert: [{ block: 15, signal: 'Vrms', metric: 'min', op: '>=', value: 0 }] });
+  check('study names an unknown parameter', /has no parameter "nope"/.test(badp.cases[0].err || ''),
+    badp.cases[0].err);
 }
 
 (async () => {

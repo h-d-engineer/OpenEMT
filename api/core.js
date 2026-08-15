@@ -73,6 +73,71 @@ function avgAfter(arr, t, lo) {
 // Mirrors smoke_test.js:75 signFor (els[idx].kind).
 function signFor(kind) { return (kind === 'src' || kind === 'gfm') ? -1 : 1; }
 
+// ---- study metrics and comparisons ----
+// Reduce one series over a sample window to the single number an assertion
+// compares. 'steady' is the last full cycle, which is what you want for "where
+// did it settle"; 'final' is the last sample, which is not the same thing on an
+// AC waveform and is a common way to accidentally assert against a zero
+// crossing.
+function metricOf(ser, t, i0, i1, metric, q, r) {
+  if (!ser || !ser.length) return null;
+  const lo = Math.max(0, i0), hi = Math.min(ser.length - 1, i1);
+  if (hi < lo) return null;
+  if (metric === 'final') return ser[hi];
+  if (metric === 'steady') {
+    const freqHz = (r && r.freqHz) || 60;
+    return avgAfter(ser.slice(lo, hi + 1), t.slice(lo, hi + 1), t[hi] - (1000 / freqHz));
+  }
+  let mn = Infinity, mx = -Infinity, sum = 0, n = 0, amx = 0;
+  for (let i = lo; i <= hi; i++) {
+    const v = ser[i];
+    if (v == null || !isFinite(v)) continue;
+    if (v < mn) mn = v;
+    if (v > mx) mx = v;
+    if (Math.abs(v) > amx) amx = Math.abs(v);
+    sum += v; n++;
+  }
+  if (!n) return null;
+  if (metric === 'min') return mn;
+  if (metric === 'max') return mx;
+  if (metric === 'absmax') return amx;
+  if (metric === 'mean') return sum / n;
+  return null;
+}
+
+// Margin is signed and in the signal's own units: positive means room to
+// spare, negative means by how much it failed. relMargin normalises by the
+// limit so a voltage and a time can be ranked against each other, which is
+// what makes "the worst margin in the whole study" a meaningful single number.
+function compareAssert(op, measured, value, value2, tol) {
+  const rel = (m, ref) => {
+    const d = Math.abs(ref) > 1e-12 ? Math.abs(ref) : 1;
+    return m / d;
+  };
+  let margin, pass;
+  switch (op) {
+    case '>=': case '>':
+      margin = measured - value; pass = op === '>' ? measured > value : measured >= value; break;
+    case '<=': case '<':
+      margin = value - measured; pass = op === '<' ? measured < value : measured <= value; break;
+    case 'between': {
+      const lo = Math.min(value, value2), hi = Math.max(value, value2);
+      margin = Math.min(measured - lo, hi - measured);
+      pass = measured >= lo && measured <= hi;
+      break;
+    }
+    case 'approx': {
+      const tolerance = tol == null ? Math.abs(value) * 0.01 : Math.abs(tol);
+      margin = tolerance - Math.abs(measured - value);
+      pass = Math.abs(measured - value) <= tolerance;
+      return { margin, rel: rel(margin, tolerance), pass };
+    }
+    default:
+      return { margin: null, rel: null, pass: false };
+  }
+  return { margin, rel: rel(margin, op === 'between' ? (value2 - value) / 2 : value), pass };
+}
+
 class OpenEMT {
   constructor() {
     this._sandbox = {
@@ -430,6 +495,190 @@ class OpenEMT {
     }
 
     return { err: 'Unknown signal "' + sig + '". Use V, Vrms, I, Irms, P, or Q.' };
+  }
+
+  // ---- studies ----
+  //
+  // A run produces a waveform. A decision needs a verdict, and the gap between
+  // them is where an agent adds leverage a person does not have: nobody hand-
+  // runs twelve contingencies and tabulates the margins, but that is exactly
+  // what a design review asks for.
+  //
+  // A study is: a base circuit, a list of cases that each perturb it, and a
+  // list of assertions evaluated against every case. The output is a table of
+  // pass/fail with the margin to each limit, and the single worst margin across
+  // the whole study, which is the number an engineer actually wants.
+  //
+  // The same shape is a validation harness (a case, a criterion, an expected
+  // value), which is deliberate: SPEC section 5 item 9 needs exactly this, so
+  // it is built once and serves both.
+  //
+  //   spec = {
+  //     cases:  [ { name, set: [{block, param, value}], remove: [blockId] } ]
+  //     sweep:  { block, param, values: [...] }        // sugar for cases
+  //     run:    { Tms, dtUs, nph, plotUs, pf: true }
+  //     assert: [ { name, block, signal, metric, op, value, value2,
+  //                 phase, window: {from, to}, tol } ]
+  //   }
+  //
+  // metric: min | max | absmax | final | mean | steady   (steady = last cycle)
+  // op:     >= | <= | > | < | between | approx           (approx uses tol)
+  runStudy(spec) {
+    const s = spec || {};
+    if (!this.S.blocks.length) return { err: 'No circuit loaded. Load one before running a study.' };
+    const asserts = Array.isArray(s.assert) ? s.assert : [];
+    if (!asserts.length) return { err: 'A study needs at least one assertion, or it cannot reach a verdict.' };
+
+    let cases = Array.isArray(s.cases) ? s.cases.slice() : [];
+    if (s.sweep) {
+      const sw = s.sweep;
+      if (sw.block == null || !sw.param || !Array.isArray(sw.values)) {
+        return { err: 'sweep needs { block, param, values: [...] }.' };
+      }
+      sw.values.forEach(v => cases.push({
+        name: sw.param + ' = ' + v,
+        set: [{ block: sw.block, param: sw.param, value: v }],
+      }));
+    }
+    // No cases means "the circuit as it stands", which is a legitimate study of
+    // one: it is how a validation check is written.
+    if (!cases.length) cases = [{ name: 'base' }];
+
+    const base = this.getCircuit();
+    const run = s.run || {};
+    const out = [];
+    try {
+      for (const c of cases) {
+        out.push(this._runStudyCase(base, c, run, asserts));
+      }
+    } finally {
+      // Leave the instance exactly as it was found. Each case mutates the live
+      // circuit (that is how overrides and removals are applied), so without
+      // this the LAST case's perturbation becomes the state every subsequent
+      // study, run and query sees. It bit immediately: a study that removed a
+      // ground made the next study report a singular matrix on a circuit the
+      // caller had never touched. Silent state leakage between studies is
+      // exactly the kind of defect that makes a verdict layer untrustworthy,
+      // so restoring is not best-effort, it is in a finally.
+      this.loadCircuit(JSON.stringify(base));
+    }
+
+    const failed = out.filter(c => !c.pass);
+    // Worst margin across every assertion of every case. Normalised, so a
+    // voltage in volts and a time in ms can be ranked against each other.
+    let worst = null;
+    out.forEach(c => (c.results || []).forEach(r => {
+      if (r.relMargin == null) return;
+      if (!worst || r.relMargin < worst.relMargin) worst = { case: c.name, ...r };
+    }));
+    return {
+      nCases: out.length,
+      passed: out.length - failed.length,
+      failed: failed.length,
+      pass: failed.length === 0,
+      worst,
+      failedCases: failed.map(c => c.name),
+      cases: out,
+    };
+  }
+
+  _runStudyCase(base, c, run, asserts) {
+    const name = c.name || 'case';
+    // Every case starts from a clean reload of the base, so one case cannot
+    // leak a parameter edit or a solved operating point into the next.
+    const lr = this.loadCircuit(JSON.stringify(base));
+    if (lr.err) return { name, pass: false, err: 'Could not rebuild the base circuit: ' + lr.err };
+
+    const applied = [];
+    for (const set of (c.set || [])) {
+      const b = this.S.blocks.find(x => x.id === set.block);
+      if (!b) return { name, pass: false, err: 'No block with id ' + set.block + ' to set ' + set.param + ' on.' };
+      if (!(set.param in b.params)) {
+        return { name, pass: false, err: 'Block ' + set.block + ' (' + b.type + ') has no parameter "'
+          + set.param + '". It has: ' + Object.keys(b.params).join(', ') + '.' };
+      }
+      applied.push(b.type + ' #' + set.block + '.' + set.param + ' = ' + set.value);
+      b.params[set.param] = set.value;
+    }
+    for (const id of (c.remove || [])) {
+      if (!this.S.blocks.some(b => b.id === id)) {
+        return { name, pass: false, err: 'No block with id ' + id + ' to remove.' };
+      }
+      applied.push('removed #' + id);
+      this.removeBlock(id);
+    }
+
+    if (run.pf) {
+      const pf = this.runPowerFlow();
+      if (pf.err) return { name, pass: false, applied, err: 'Power flow: ' + pf.err };
+      if (pf.converged === false) {
+        return { name, pass: false, applied, err: 'Power flow did not converge, so the run would start from a meaningless operating point.' };
+      }
+    }
+    const sim = this.runSimulation({ Tms: run.Tms, dtUs: run.dtUs, nph: run.nph, plotUs: run.plotUs });
+    if (sim.err) return { name, pass: false, applied, err: sim.err };
+
+    const results = asserts.map(a => this._evalAssert(a, sim.runId));
+    return { name, applied, pass: results.every(r => r.pass), stat: sim.stat, results };
+  }
+
+  _evalAssert(a, runId) {
+    const label = a.name || ((a.block != null ? '#' + a.block + ' ' : '') + (a.signal || 'V') + ' '
+      + (a.metric || 'min') + ' ' + (a.op || '>=') + ' ' + a.value);
+    const q = this.query(a.block, a.signal || 'V', { runId });
+    if (q.err) return { assert: label, pass: false, err: q.err };
+    const r = this._runs.get(runId);
+    const t = r.t;
+    // Restrict to a time window when given: "recovers above 0.9 pu within
+    // 200 ms" is a statement about a window, not about the whole run.
+    const w = a.window || {};
+    let i0 = 0, i1 = t.length - 1;
+    if (w.from != null) { while (i0 < t.length && t[i0] < w.from) i0++; }
+    if (w.to != null) { while (i1 >= 0 && t[i1] > w.to) i1--; }
+
+    // Skip the measurement filter's fill region. Vrms, Irms, P and Q are all
+    // windowed over one cycle, and rmsSeries divides by min(i+1, win), so the
+    // first cycle of every one of them ramps up from zero. Those samples are
+    // the filter filling, not the circuit doing anything.
+    //
+    // This matters more here than anywhere else in the API: `metric: 'min'` on
+    // a Vrms signal would otherwise return roughly zero for EVERY case of every
+    // study, and report a confident FAIL that has nothing to do with the
+    // design. A verdict that is wrong for an invisible reason is worse than no
+    // verdict. Reported as `skippedFillMs` rather than done silently, and an
+    // explicit window.from is always respected as-is.
+    let skippedFillMs = null;
+    const WINDOWED = ['Vrms', 'Irms', 'P', 'Q'];
+    if (w.from == null && WINDOWED.includes(a.signal)) {
+      const dtOut = t.length > 1 ? (t[1] - t[0]) : 0;
+      const cyc = 1000 / ((r && r.freqHz) || 60);
+      const fill = dtOut > 0 ? Math.min(t.length - 1, Math.ceil(cyc / dtOut)) : 0;
+      if (fill > i0) { i0 = fill; skippedFillMs = +(t[i0] - t[0]).toFixed(3); }
+    }
+    if (i1 < i0) return { assert: label, pass: false, err: 'Window ' + JSON.stringify(w) + ' selects no samples.' };
+
+    // Reduce across phases to the worst case unless one is named, because a
+    // criterion that holds on two phases and fails on the third has failed.
+    const chosen = a.phase != null ? [q.series[a.phase]].filter(Boolean) : q.series;
+    if (!chosen.length) return { assert: label, pass: false, err: 'Phase ' + a.phase + ' not present on this signal.' };
+    const metric = a.metric || 'min';
+    const per = chosen.map(ser => metricOf(ser, t, i0, i1, metric, q, r));
+    if (per.some(v => v == null || !isFinite(v))) {
+      return { assert: label, pass: false, err: 'Metric "' + metric + '" produced no finite value.' };
+    }
+    // Worst case depends on which way the limit points.
+    const op = a.op || '>=';
+    const measured = (op === '>=' || op === '>') ? Math.min(...per)
+      : (op === '<=' || op === '<') ? Math.max(...per)
+        : per[0];
+    const cmp = compareAssert(op, measured, a.value, a.value2, a.tol);
+    return {
+      assert: label, metric, op, measured, limit: a.value,
+      phase: a.phase == null ? 'worst of ' + chosen.length : a.phase,
+      window: (w.from != null || w.to != null) ? w : null,
+      skippedFillMs,
+      margin: cmp.margin, relMargin: cmp.rel, pass: cmp.pass,
+    };
   }
 
   listExamples() {

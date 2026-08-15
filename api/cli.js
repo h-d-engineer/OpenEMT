@@ -215,6 +215,46 @@ program.command('run')
     }
   });
 
+// ---- study ----
+// A study takes a JSON spec (see api/core.js runStudy) and returns a verdict
+// table rather than a waveform. The spec is a file or inline JSON because it is
+// structured enough that flags would be worse than a document.
+program.command('study')
+  .description('Run a multi-case study with assertions and report pass/fail margins.')
+  .argument('<file>', 'circuit JSON (webemt:1), or the name of a shipped example')
+  .requiredOption('--spec <path-or-json>', 'study spec: a .json file path, or inline JSON')
+  .option('--json', 'Emit machine-readable JSON.')
+  .action((file, opts) => {
+    const em = new OpenEMT();
+    const lr = resolveCase(em, file);
+    if (lr && lr.err) fail(lr.err);
+    let spec;
+    const raw = opts.spec;
+    try {
+      spec = /^\s*[{[]/.test(raw) ? JSON.parse(raw)
+        : JSON.parse(require('fs').readFileSync(raw, 'utf8'));
+    } catch (e) { fail('Could not read the study spec: ' + e.message); }
+    const r = em.runStudy(spec);
+    if (r && r.err) fail(r.err);
+    if (opts.json) { emit(r, true); return; }
+    console.log((r.pass ? 'PASS' : 'FAIL') + ': ' + r.passed + ' of ' + r.nCases + ' cases passed');
+    if (r.worst) {
+      console.log('worst margin: ' + r.worst.assert + '  (case "' + r.worst.case + '", measured '
+        + fmt(r.worst.measured) + ' vs limit ' + fmt(r.worst.limit) + ', margin ' + fmt(r.worst.margin) + ')');
+    }
+    console.log('');
+    r.cases.forEach(c => {
+      console.log((c.pass ? 'PASS ' : 'FAIL ') + c.name + (c.err ? '  [' + c.err + ']' : ''));
+      (c.results || []).forEach(x => {
+        if (x.err) { console.log('    ERR  ' + x.assert + ': ' + x.err); return; }
+        console.log('    ' + (x.pass ? 'ok   ' : 'FAIL ') + x.assert
+          + '  measured ' + fmt(x.measured) + ', limit ' + fmt(x.limit) + ', margin ' + fmt(x.margin));
+      });
+    });
+    if (!r.pass) process.exitCode = 1; // usable as a CI gate
+  });
+function fmt(v) { return v == null ? '-' : (Math.abs(v) >= 1000 ? v.toFixed(0) : v.toFixed(3)); }
+
 // ---- query ----
 program.command('query')
   .description('Query a signal from a simulation run by block ID.')
