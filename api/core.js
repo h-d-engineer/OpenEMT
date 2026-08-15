@@ -73,6 +73,35 @@ function avgAfter(arr, t, lo) {
 // Mirrors smoke_test.js:75 signFor (els[idx].kind).
 function signFor(kind) { return (kind === 'src' || kind === 'gfm') ? -1 : 1; }
 
+// ---- protection coordination ----
+// The same IEEE C37.112 constants the relay block integrates (blocks.js
+// RELAY_CURVES). Duplicated deliberately rather than imported: core.js loads
+// src/ in a vm sandbox and reaching into it for a constant would couple the
+// study layer to the solver's internals. api/test_api.js asserts the two
+// tables agree, so the copy cannot drift silently.
+const TCC_CURVES = {
+  MI: { A: 0.0515, B: 0.1140, p: 0.02, tr: 4.85 },
+  VI: { A: 19.61, B: 0.491, p: 2, tr: 21.6 },
+  EI: { A: 28.2, B: 0.1217, p: 2, tr: 29.1 },
+};
+// Operating time at current I, in seconds. Below pickup the relay never
+// operates, which is null rather than Infinity so it reads as "not applicable"
+// instead of "very slow". The instantaneous element (50) short-circuits the
+// inverse-time element (51) exactly as the solver's step() does.
+function tccTime(d, I) {
+  if (d.Iinst != null && I >= d.Iinst) return 0;
+  const M = I / d.Ipu;
+  if (!(M > 1)) return null;
+  return d.TD * (d.cv.A / (Math.pow(M, d.cv.p) - 1) + d.cv.B);
+}
+function logSpace(lo, hi, n) {
+  if (!(hi > lo) || n < 2) return [lo];
+  const out = [];
+  const a = Math.log(lo), b = Math.log(hi);
+  for (let i = 0; i < n; i++) out.push(Math.exp(a + (b - a) * i / (n - 1)));
+  return out;
+}
+
 // ---- study metrics and comparisons ----
 // Reduce one series over a sample window to the single number an assertion
 // compares. 'steady' is the last full cycle, which is what you want for "where
@@ -678,6 +707,109 @@ class OpenEMT {
       window: (w.from != null || w.to != null) ? w : null,
       skippedFillMs,
       margin: cmp.margin, relMargin: cmp.rel, pass: cmp.pass,
+    };
+  }
+
+  // ---- protection coordination ----
+  //
+  // The elements were already here: relay blocks integrate the IEEE C37.112
+  // inverse-time law and trip a breaker by id. What was missing is the study
+  // that engineers actually deliver, which is not a waveform at all: the
+  // time-current curves of a device chain on one log-log axis, and the
+  // selectivity margin between each adjacent pair at every current of interest.
+  //
+  // The verdict is "selective or not, and by how many milliseconds at what
+  // current". A pair is selective when the downstream device clears far enough
+  // ahead of its upstream backup that the backup never operates for a fault the
+  // downstream one owns. The interval is the coordination time interval (CTI),
+  // conventionally 0.2 to 0.4 s for electromechanical upstream devices and
+  // tighter for static relays; 0.3 s is a common default and is used here
+  // unless the caller says otherwise.
+  //
+  //   spec = {
+  //     chain:    [downstreamId, ..., upstreamId]   // ordered, closest to the fault first
+  //     currents: [amps, ...]                       // where to check the margin
+  //     cti:      0.3                               // required interval, seconds
+  //   }
+  //
+  // The chain is explicit rather than inferred. Coordination is defined by
+  // which device backs up which, and guessing that from topology is exactly the
+  // sort of assumption a protection engineer must not have made for them.
+  coordination(spec) {
+    const s = spec || {};
+    const relays = this.S.blocks.filter(b => b.type === 'relay');
+    if (!relays.length) return { err: 'No overcurrent relay blocks in this circuit; there is nothing to coordinate.' };
+    let chain = Array.isArray(s.chain) ? s.chain.slice() : null;
+    if (!chain) {
+      if (relays.length === 1) chain = [relays[0].id];
+      else {
+        return { err: 'This circuit has ' + relays.length + ' relays (' + relays.map(r => '#' + r.id).join(', ')
+          + '). Give the chain explicitly, ordered from the device closest to the fault to its backup: '
+          + '{ chain: [downstream, ..., upstream] }. Which device backs up which is a protection '
+          + 'decision, not something to infer from topology.' };
+      }
+    }
+    const devices = [];
+    for (const id of chain) {
+      const b = this.S.blocks.find(x => x.id === id);
+      if (!b) return { err: 'No block with id ' + id + '.' };
+      if (b.type !== 'relay') return { err: 'Block ' + id + ' is a ' + b.type + ', not an overcurrent relay.' };
+      const p = b.params;
+      const key = String(p.curve || 'VI').toUpperCase().trim();
+      const cv = TCC_CURVES[key];
+      if (!cv) return { err: 'Relay #' + id + ' has curve "' + p.curve + '"; expected MI, VI or EI.' };
+      devices.push({
+        blockId: id, curve: key, Ipu: Math.max(+p.Ipu, 1e-6), TD: Math.max(+p.TD || 0.5, 0.01),
+        Iinst: +p.Iinst > 0 ? +p.Iinst : null, brkId: p.brkId, cv,
+      });
+    }
+
+    // Currents to evaluate at. Default to a decade either side of the highest
+    // pickup, which is the range a coordination plot conventionally covers.
+    const maxPickup = Math.max(...devices.map(d => d.Ipu));
+    const currents = Array.isArray(s.currents) && s.currents.length
+      ? s.currents.slice().sort((a, b2) => a - b2)
+      : logSpace(maxPickup * 1.1, maxPickup * 20, 12);
+    const cti = s.cti == null ? 0.3 : +s.cti;
+
+    const curves = devices.map(d => ({
+      blockId: d.blockId, curve: d.curve, Ipu: d.Ipu, TD: d.TD, Iinst: d.Iinst, brkId: d.brkId,
+      points: logSpace(d.Ipu * 1.01, Math.max(maxPickup * 20, d.Ipu * 20), 60)
+        .map(I => ({ I, t: tccTime(d, I) })).filter(pt => pt.t != null),
+    }));
+
+    // Pairwise margins, downstream against its immediate backup.
+    const pairs = [];
+    for (let k = 0; k + 1 < devices.length; k++) {
+      const dn = devices[k], up = devices[k + 1];
+      const at = currents.map(I => {
+        const tDn = tccTime(dn, I), tUp = tccTime(up, I);
+        // A device that does not pick up at this current cannot be the one that
+        // clears, and saying "selective" about that is meaningless rather than
+        // reassuring, so it is reported as not-applicable.
+        if (tDn == null || tUp == null) {
+          return { I, tDown: tDn, tUp, interval: null, pass: null,
+            note: tDn == null ? 'downstream #' + dn.blockId + ' does not pick up at this current'
+              : 'upstream #' + up.blockId + ' does not pick up at this current' };
+        }
+        const interval = tUp - tDn;
+        return { I, tDown: tDn, tUp, interval, margin: interval - cti, pass: interval >= cti };
+      });
+      const checked = at.filter(x => x.pass !== null);
+      const worst = checked.length ? checked.reduce((a, b2) => (b2.margin < a.margin ? b2 : a)) : null;
+      pairs.push({
+        downstream: dn.blockId, upstream: up.blockId,
+        pass: checked.length ? checked.every(x => x.pass) : null,
+        worst, at,
+      });
+    }
+    const graded = pairs.filter(p => p.pass !== null);
+    return {
+      cti, nDevices: devices.length,
+      pass: graded.length ? graded.every(p => p.pass) : null,
+      curves, pairs,
+      note: graded.length ? undefined
+        : 'No current in the checked range picks up both devices of any pair, so selectivity was not assessed. Give explicit `currents` covering the fault levels you care about.',
     };
   }
 

@@ -661,7 +661,7 @@ function approxPct(sim, exp) { return Math.abs(sim - exp) / Math.abs(exp) * 100;
     try {
       await client.connect(tr);
       const tools = (await client.listTools()).tools.map(t => t.name);
-      check('MCP exposes 15 tools', tools.length === 15, 'n=' + tools.length);
+      check('MCP exposes 16 tools', tools.length === 16, 'n=' + tools.length);
       // The server used to restate its version as a literal and had already
       // drifted: it announced 0.1.0 after the package shipped 0.1.1. Assert it
       // against package.json so the next bump cannot silently repeat that.
@@ -688,6 +688,97 @@ function approxPct(sim, exp) { return Math.abs(sim - exp) / Math.abs(exp) * 100;
       await client.close();
     }
   });
+}
+
+// ---- protection coordination ----
+{
+  // core.js keeps its own copy of the C37.112 constants because reaching into
+  // the vm sandbox for a solver constant would couple the study layer to the
+  // solver's internals. A copy that can drift from the law the solver actually
+  // integrates would make every coordination curve quietly wrong, so compare
+  // the two tables directly.
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'blocks.js'), 'utf8');
+  const api = fs.readFileSync(path.join(__dirname, 'core.js'), 'utf8');
+  // Anchor on the table name, then read the three curve rows out of it. Simple
+  // on purpose: a clever parser that silently matches nothing would make this
+  // guard pass forever, which is the failure mode it exists to prevent.
+  const grab = (text, name) => {
+    const at = text.indexOf(name + ' = {');
+    if (at < 0) return null;
+    const body = text.slice(at, text.indexOf('};', at));
+    const out = {};
+    // No regex. Escaping a pattern through the layers between here and the file
+    // is how the first version of this guard ended up matching nothing and
+    // reporting null for both tables, which is a guard that cannot fail.
+    ['MI', 'VI', 'EI'].forEach(k => {
+      const i = body.indexOf(k + ': {');
+      if (i < 0) return;
+      const row = body.slice(i + k.length + 3, body.indexOf('}', i));
+      out[k] = {};
+      row.split(',').forEach(pair => {
+        const bits = pair.split(':');
+        if (bits.length === 2) out[k][bits[0].trim()] = +bits[1];
+      });
+    });
+    return Object.keys(out).length === 3 ? out : null;
+  };
+  const solver = grab(src, 'RELAY_CURVES'), study = grab(api, 'TCC_CURVES');
+  check('coordination curve constants match the solver',
+    !!solver && !!study && JSON.stringify(solver) === JSON.stringify(study),
+    'solver=' + JSON.stringify(solver) + ' study=' + JSON.stringify(study));
+
+  const em = new OpenEMT();
+  em.reset();
+  const s1 = em.addBlock('src', { Vrms: 277, Rs: 0.05 });
+  const main = em.addBlock('relay', { Ipu: 600, curve: 'VI', TD: 0.5, Iinst: 0, brkId: 0 });
+  const fdr = em.addBlock('relay', { Ipu: 200, curve: 'VI', TD: 0.15, Iinst: 0, brkId: 0 });
+  const ld = em.addBlock('rlc', { R: 2, L: -1, C: -1 });
+  const g1 = em.addBlock('gnd'), g2 = em.addBlock('gnd');
+  em.addWire(s1, 1, main, 0); em.addWire(main, 1, fdr, 0); em.addWire(fdr, 1, ld, 0);
+  em.addWire(s1, 0, g1, 0); em.addWire(ld, 1, g2, 0);
+
+  // Hand calculation against IEEE C37.112, t = TD*(A/(M^p - 1) + B). Feeder at
+  // 800 A: M = 4, so 0.15*(19.61/15 + 0.491) = 0.26975 s.
+  const co = em.coordination({ chain: [fdr, main], currents: [400, 800, 1600, 3200, 6400], cti: 0.3 });
+  const at800 = co.pairs[0].at.find(x => x.I === 800);
+  check('TCC time matches the C37.112 closed form', Math.abs(at800.tDown - 0.26975) < 1e-4,
+    't=' + at800.tDown);
+
+  // Below pickup is "not applicable", not "very slow": the main picks up at
+  // 600 A and cannot be the device that clears a 400 A fault.
+  const at400 = co.pairs[0].at.find(x => x.I === 400);
+  check('a device below pickup is reported as not applicable',
+    at400.tUp === null && at400.pass === null, JSON.stringify(at400));
+
+  // The finding a coordination study exists to produce: inverse curves converge,
+  // so a pair selective at moderate current fails at maximum fault current.
+  check('selectivity holds at moderate current', co.pairs[0].at.find(x => x.I === 1600).pass === true);
+  check('miscoordination is caught at high current', co.pairs[0].at.find(x => x.I === 6400).pass === false,
+    'interval=' + co.pairs[0].at.find(x => x.I === 6400).interval);
+  check('study verdict is miscoordinated overall', co.pass === false, 'pass=' + co.pass);
+  check('worst pair margin is negative and located',
+    co.pairs[0].worst.margin < 0 && co.pairs[0].worst.I === 6400, JSON.stringify(co.pairs[0].worst));
+
+  // Widening the gap between the two settings must restore selectivity.
+  const co2 = em.coordination({ chain: [fdr, main], currents: [800, 1600, 3200], cti: 0.3 });
+  check('a coordinated range passes', co2.pass === true, 'pass=' + co2.pass);
+
+  // The instantaneous element short-circuits the inverse element, as in step().
+  em.S.blocks.find(b => b.id === fdr).params.Iinst = 2000;
+  const co3 = em.coordination({ chain: [fdr, main], currents: [3200], cti: 0.3 });
+  check('the instantaneous element clears at zero time',
+    co3.pairs[0].at[0].tDown === 0, 't=' + co3.pairs[0].at[0].tDown);
+  em.S.blocks.find(b => b.id === fdr).params.Iinst = 0;
+
+  // Refusals: an ambiguous chain must be refused rather than guessed, because
+  // which device backs up which is a protection decision.
+  check('an ambiguous chain is refused', /Give the chain explicitly/.test(em.coordination({}).err || ''),
+    em.coordination({}).err);
+  check('a non-relay in the chain is refused', /not an overcurrent relay/.test(em.coordination({ chain: [ld] }).err || ''),
+    em.coordination({ chain: [ld] }).err);
+  const em2 = new OpenEMT(); em2.reset(); em2.addBlock('gnd');
+  check('a circuit with no relays is refused', /nothing to coordinate/.test(em2.coordination({}).err || ''),
+    em2.coordination({}).err);
 }
 
 // ---- study layer ----

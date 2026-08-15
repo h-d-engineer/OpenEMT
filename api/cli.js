@@ -215,6 +215,41 @@ program.command('run')
     }
   });
 
+// ---- coord ----
+program.command('coord')
+  .description('Protective device coordination: time-current curves and selectivity margins.')
+  .argument('<file>', 'circuit JSON (webemt:1), or the name of a shipped example')
+  .option('--chain <ids>', 'relay block IDs, downstream first: e.g. 3,2', v => v.split(',').map(x => parseInt(x, 10)))
+  .option('--currents <amps>', 'currents to check, comma separated', v => v.split(',').map(parseFloat))
+  .option('--cti <s>', 'required coordination time interval in seconds (default 0.3)', parseFloat)
+  .option('--json', 'Emit machine-readable JSON (includes the full curves).')
+  .action((file, opts) => {
+    const em = new OpenEMT();
+    const lr = resolveCase(em, file);
+    if (lr && lr.err) fail(lr.err);
+    const r = em.coordination({ chain: opts.chain, currents: opts.currents, cti: opts.cti });
+    if (r && r.err) fail(r.err);
+    if (opts.json) { emit(r, true); return; }
+    console.log((r.pass === null ? 'NOT ASSESSED' : r.pass ? 'SELECTIVE' : 'MISCOORDINATED')
+      + ': ' + r.nDevices + ' devices, required interval ' + r.cti + ' s');
+    if (r.note) console.log(r.note);
+    r.pairs.forEach(p2 => {
+      console.log('');
+      console.log('#' + p2.downstream + ' backed up by #' + p2.upstream
+        + (p2.pass === null ? '  (not assessed)' : p2.pass ? '  selective' : '  MISCOORDINATED'));
+      p2.at.forEach(x => {
+        const tD = x.tDown == null ? '   -  ' : x.tDown.toFixed(3);
+        const tU = x.tUp == null ? '   -  ' : x.tUp.toFixed(3);
+        console.log('   ' + String(Math.round(x.I)).padStart(7) + ' A   down ' + tD + ' s   up ' + tU
+          + ' s   interval ' + (x.interval == null ? 'n/a' : x.interval.toFixed(3) + ' s')
+          + (x.pass === null ? '   (' + x.note + ')' : x.pass ? '' : '   BELOW CTI'));
+      });
+      if (p2.worst) console.log('   worst: ' + Math.round(p2.worst.I) + ' A, interval '
+        + p2.worst.interval.toFixed(3) + ' s, margin ' + p2.worst.margin.toFixed(3) + ' s');
+    });
+    if (r.pass === false) process.exitCode = 1;
+  });
+
 // ---- study ----
 // A study takes a JSON spec (see api/core.js runStudy) and returns a verdict
 // table rather than a waveform. The spec is a file or inline JSON because it is

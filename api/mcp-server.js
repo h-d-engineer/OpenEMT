@@ -169,6 +169,20 @@ const TOOLS = [
     },
   },
   {
+    name: 'coordination',
+    description: 'Protective device coordination study. Returns the IEEE C37.112 time-current curve of each overcurrent relay in a chain and the selectivity margin between each adjacent pair at the currents you name. The verdict is "selective or not, and by how many milliseconds at what current". Inverse curves converge at high current, so a pair that coordinates at moderate fault levels often does not at maximum fault current, which is the usual finding. The chain must be given explicitly, downstream device first: which device backs up which is a protection decision and is not inferred from topology.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chain: { type: 'array', items: { type: 'integer' },
+          description: 'Relay block IDs ordered from the device closest to the fault to its backup. Optional only when the circuit has exactly one relay.' },
+        currents: { type: 'array', items: { type: 'number' },
+          description: 'Fault currents in amps to check the margin at. Defaults to a spread from just above the highest pickup to 20x it.' },
+        cti: { type: 'number', default: 0.3, description: 'Required coordination time interval in seconds.' },
+      },
+    },
+  },
+  {
     name: 'run_study',
     description: 'Run a multi-case study and get a VERDICT instead of a waveform. Each case perturbs the loaded circuit (parameter overrides, removed blocks, or a parameter sweep), runs it, and evaluates assertions with margins. Returns a pass/fail table plus the single worst margin across the study. Use this for contingency screening ("does the load ride through any single failure"), design sizing ("how small can the battery be"), and regression checks. Assertions on Vrms/Irms/P/Q automatically skip the first cycle, which is the measurement filter filling rather than circuit behaviour.',
     inputSchema: {
@@ -246,6 +260,11 @@ async function handleCall(req) {
         if (!a.file && !a.text) { r = err('Provide either "file" (path to a .raw) or "text" (raw contents).'); break; }
         const ir = em.importCase(a.file || a.text);
         if (ir && ir.err) r = err(ir.err); else r = ok(ir);
+        break;
+      }
+      case 'coordination': {
+        const cr = em.coordination({ chain: a.chain, currents: a.currents, cti: a.cti });
+        if (cr && cr.err) r = err(cr.err); else r = ok(cr);
         break;
       }
       case 'run_study': {
