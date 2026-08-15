@@ -690,6 +690,95 @@ function approxPct(sim, exp) { return Math.abs(sim - exp) / Math.abs(exp) * 100;
   });
 }
 
+// ---- subcircuits ----
+{
+  const feeder = {
+    ports: [{ name: 'in', block: 1, term: 0 }],
+    params: { load: { default: 12, to: [{ block: 2, param: 'R' }] } },
+    blocks: [
+      { id: 1, type: 'line', x: 0, y: 0, rot: 0, params: { R: 0.3, L: 2, C: 0, Rm: 0, Lm: 0 } },
+      { id: 2, type: 'rlc', x: 100, y: 0, rot: 0, params: { R: 12, L: -1, C: -1 } },
+      { id: 3, type: 'gnd', x: 100, y: 80, rot: 0, params: {} },
+      { id: 4, type: 'probe', x: 60, y: -60, rot: 0, params: {} },
+    ],
+    wires: [{ a: [1, 1], b: [2, 0] }, { a: [2, 1], b: [3, 0] }, { a: [4, 0], b: [2, 0] }],
+  };
+  const twoN = defs => ({
+    webemt: 1, vconv: 'ph', defs,
+    blocks: [
+      { id: 10, type: 'src', x: 0, y: 0, rot: 0, params: { Vrms: 277, f: 60, Rs: 0.05 } },
+      { id: 11, type: 'gnd', x: 0, y: 80, rot: 0, params: {} },
+      { id: 12, type: 'subckt', x: 200, y: 0, rot: 0, params: { def: 'feeder', load: 12 } },
+      { id: 13, type: 'subckt', x: 200, y: 150, rot: 0, params: { def: 'feeder', load: 24 } },
+    ],
+    wires: [{ a: [10, 1], b: [12, 0] }, { a: [10, 1], b: [13, 0] }, { a: [10, 0], b: [11, 0] }],
+  });
+
+  const em = new OpenEMT();
+  const lr = em.loadCircuit(twoN({ feeder }));
+  check('a hierarchical circuit loads', !(lr && lr.err), JSON.stringify(lr && lr.err));
+  check('flattening expands both instances', lr.subcircuits && lr.subcircuits.blocksAfter === 10
+    && lr.subcircuits.instances === 2, JSON.stringify(lr.subcircuits && {
+      before: lr.subcircuits.blocksBefore, after: lr.subcircuits.blocksAfter }));
+  check('the instance map resolves an inner block',
+    typeof lr.subcircuits.map['12/4'] === 'number' && lr.subcircuits.map['12/4'] !== lr.subcircuits.map['13/4'],
+    JSON.stringify([lr.subcircuits.map['12/4'], lr.subcircuits.map['13/4']]));
+
+  // Parameter overrides must reach the inner blocks, and the two instances must
+  // be genuinely separate: this is the thing the scale block cannot do.
+  const loads = em.getCircuit().blocks.filter(b => b.type === 'rlc').map(b => b.params.R).sort((a, b) => a - b);
+  check('parameter overrides reach the instances', loads[0] === 12 && loads[1] === 24, JSON.stringify(loads));
+
+  em.runSimulation({ Tms: 80, nph: 1 });
+  const A = em.query(lr.subcircuits.map['12/4'], 'Vrms').steadyState[0];
+  const B = em.query(lr.subcircuits.map['13/4'], 'Vrms').steadyState[0];
+
+  // The strongest available check: the flattened model must be the same circuit
+  // as the one built by hand, to the last digit. Anything less and the
+  // hierarchy is quietly changing the physics.
+  const h = new OpenEMT(); h.reset(); h.setVconv('ph');
+  const s1 = h.addBlock('src', { Vrms: 277, f: 60, Rs: 0.05 }), g0 = h.addBlock('gnd');
+  h.addWire(s1, 0, g0, 0);
+  const mk = R => {
+    const l = h.addBlock('line', { R: 0.3, L: 2, C: 0, Rm: 0, Lm: 0 });
+    const r2 = h.addBlock('rlc', { R, L: -1, C: -1 });
+    const gg = h.addBlock('gnd'), pr = h.addBlock('probe');
+    h.addWire(s1, 1, l, 0); h.addWire(l, 1, r2, 0); h.addWire(r2, 1, gg, 0); h.addWire(pr, 0, r2, 0);
+    return pr;
+  };
+  const pa = mk(12), pb = mk(24);
+  h.runSimulation({ Tms: 80, nph: 1 });
+  check('a flattened subcircuit matches the hand-built circuit exactly',
+    Math.abs(A - h.query(pa, 'Vrms').steadyState[0]) < 1e-9
+      && Math.abs(B - h.query(pb, 'Vrms').steadyState[0]) < 1e-9,
+    A + ' vs ' + h.query(pa, 'Vrms').steadyState[0]);
+
+  // Every failure mode names what is wrong, because a hierarchy makes a broken
+  // reference much harder to find by eye than a flat circuit does.
+  const bad = spec => (new OpenEMT()).loadCircuit(spec).err || '';
+  check('an unknown definition is named',
+    /is not in defs/.test(bad(twoN({}))), bad(twoN({})));
+  const noPorts = JSON.parse(JSON.stringify(feeder)); noPorts.ports = [];
+  check('a definition with no ports is refused',
+    /declares no ports/.test(bad(twoN({ feeder: noPorts }))), bad(twoN({ feeder: noPorts })));
+  const badBind = JSON.parse(JSON.stringify(feeder));
+  badBind.params.load.to = [{ block: 2, param: 'nope' }];
+  check('a parameter bound to a missing param is named',
+    /which that block does not have/.test(bad(twoN({ feeder: badBind }))), bad(twoN({ feeder: badBind })));
+  const badPort = JSON.parse(JSON.stringify(feeder)); badPort.ports = [{ name: 'in', block: 99, term: 0 }];
+  check('a port naming a missing block is refused',
+    /does not contain/.test(bad(twoN({ feeder: badPort }))), bad(twoN({ feeder: badPort })));
+  const selfRef = { ports: [{ name: 'in', block: 1, term: 0 }],
+    blocks: [{ id: 1, type: 'subckt', x: 0, y: 0, rot: 0, params: { def: 'feeder' } }], wires: [] };
+  check('a self-instantiating definition is caught rather than hanging',
+    /instantiates itself|deeper than 8/.test(bad(twoN({ feeder: selfRef }))), bad(twoN({ feeder: selfRef })));
+
+  // A flat circuit must be entirely unaffected: no defs, no subcircuits key.
+  const plain = (new OpenEMT()).loadCircuit(path.resolve(__dirname, '..', 'examples', 'ieee9bus.json'));
+  check('a flat circuit reports no subcircuit metadata', plain.subcircuits === undefined,
+    JSON.stringify(plain.subcircuits));
+}
+
 // ---- survivability-weighted availability ----
 {
   const em = new OpenEMT();

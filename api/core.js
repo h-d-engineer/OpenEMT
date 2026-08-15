@@ -73,6 +73,108 @@ function avgAfter(arr, t, lo) {
 // Mirrors smoke_test.js:75 signFor (els[idx].kind).
 function signFor(kind) { return (kind === 'src' || kind === 'gfm') ? -1 : 1; }
 
+// ---- subcircuits ----
+//
+// A datacenter is the same UPS chain repeated, and the interesting question is
+// always what happens BETWEEN chains during a transfer. The `scale` block
+// cannot answer that by construction: it represents N copies as one aggregate
+// and deliberately does not conserve power at the coupling, so there is no
+// second chain to transfer to. Subcircuits give real, separately simulated
+// units, and they are also how an agent composes a large model without losing
+// the thread: four instances of one verified module rather than 200 blocks.
+//
+// A circuit may carry a `defs` map of reusable definitions and instantiate one
+// with a `subckt` block. Flattening expands every instance into ordinary blocks
+// and wires BEFORE the solver sees it, so nothing downstream changes.
+//
+//   "defs": {
+//     "ups": {
+//       "ports":  [ { "name": "AC in", "block": 1, "term": 0 } ],
+//       "params": { "battAh": { "default": 0.02, "to": [ { "block": 4, "param": "Ah" } ] } },
+//       "blocks": [ ... ],      // ids are LOCAL to the definition
+//       "wires":  [ ... ]
+//     }
+//   }
+//   { "id": 7, "type": "subckt", "params": { "def": "ups", "battAh": 0.05 } }
+//
+// An outer wire to (instance, terminal k) is rewritten to the inner block and
+// terminal that port k names. Parameter overrides are explicit bindings rather
+// than name matching, so a definition's public knobs are a declared surface
+// instead of whatever its internals happen to be called.
+//
+// Lives here rather than in src/ because this is the agent path: an agent
+// composes JSON, and the canvas cannot yet draw or edit a subcircuit. Promoting
+// it to src/ is what browser support would need.
+function flattenCircuit(circuit) {
+  const defs = circuit.defs || {};
+  const out = { blocks: [], wires: [] };
+  const map = {};   // "instancePath/localId" -> flattened id (or a port list)
+  let nextId = 1;
+  (circuit.blocks || []).forEach(b => { if (+b.id >= nextId) nextId = +b.id + 1; });
+
+  const expand = (blocks, wires, pathPrefix, depth, chain) => {
+    if (depth > 8) return 'Subcircuit nesting is deeper than 8 levels at "' + pathPrefix
+      + '"; this is almost certainly a definition that instantiates itself.';
+    for (const b of blocks) {
+      if (b.type !== 'subckt') {
+        const nb = JSON.parse(JSON.stringify(b));
+        nb.id = nextId++;
+        map[pathPrefix + b.id] = nb.id;
+        out.blocks.push(nb);
+        continue;
+      }
+      const dname = b.params && b.params.def;
+      const d = defs[dname];
+      if (!d) return 'Block #' + b.id + ' instantiates definition "' + dname + '", which is not in defs.';
+      if (chain.includes(dname)) return 'Definition "' + dname + '" instantiates itself (via '
+        + chain.concat(dname).join(' -> ') + '), which cannot be flattened.';
+      if (!Array.isArray(d.ports) || !d.ports.length) return 'Definition "' + dname
+        + '" declares no ports, so nothing can connect to it.';
+      const inner = JSON.parse(JSON.stringify({ blocks: d.blocks || [], wires: d.wires || [] }));
+      const decl = d.params || {};
+      for (const [pname, pdef] of Object.entries(decl)) {
+        const val = (b.params && pname in b.params) ? b.params[pname] : pdef.default;
+        if (val === undefined) continue;
+        for (const bind of (pdef.to || [])) {
+          const target = inner.blocks.find(x => x.id === bind.block);
+          if (!target) return 'Definition "' + dname + '" binds parameter "' + pname + '" to block '
+            + bind.block + ', which it does not contain.';
+          if (!(bind.param in target.params)) return 'Definition "' + dname + '" binds "' + pname
+            + '" to ' + target.type + ' #' + bind.block + '.' + bind.param + ', which that block does not have.';
+          target.params[bind.param] = val;
+        }
+      }
+      const sub = pathPrefix + b.id + '/';
+      const e = expand(inner.blocks, inner.wires, sub, depth + 1, chain.concat(dname));
+      if (e) return e;
+      const resolved = d.ports.map(p => {
+        const fid = map[sub + p.block];
+        return typeof fid === 'number' ? [fid, p.term || 0] : null;
+      });
+      if (resolved.some(x => x == null)) return 'Definition "' + dname + '" has a port naming a block it does not contain (ports reference '
+        + JSON.stringify(d.ports.map(p => p.block)) + ').';
+      map[pathPrefix + b.id] = resolved;  // an instance maps to its port list
+    }
+    for (const w of wires) {
+      const end = (e2) => {
+        const m = map[pathPrefix + e2[0]];
+        if (m == null) return null;
+        if (Array.isArray(m)) { const p = m[e2[1]]; return p ? p.slice() : null; }
+        return [m, e2[1]];
+      };
+      const a = end(w.a), b2 = end(w.b);
+      if (!a || !b2) return 'A wire references terminal ' + JSON.stringify(!a ? w.a : w.b)
+        + ', which does not resolve: the block is missing, or a subcircuit has no such port.';
+      out.wires.push({ a, b: b2 });
+    }
+    return null;
+  };
+
+  const e = expand(circuit.blocks || [], circuit.wires || [], '', 0, []);
+  if (e) return { err: e };
+  return { blocks: out.blocks, wires: out.wires, map };
+}
+
 // ---- protection coordination ----
 // The same IEEE C37.112 constants the relay block integrates (blocks.js
 // RELAY_CURVES). Duplicated deliberately rather than imported: core.js loads
@@ -245,6 +347,21 @@ class OpenEMT {
     if (!d || d.webemt !== 1 || !Array.isArray(d.blocks) || !Array.isArray(d.wires)) {
       return { err: 'Not an OpenEMT circuit file (missing webemt:1 / blocks / wires).' };
     }
+    // Subcircuits are expanded here, before anything else looks at the model.
+    // Flattening at load rather than at solve keeps every downstream consumer
+    // (the solver, the study layer, query-by-block-id, coordination) working on
+    // ordinary blocks with no knowledge that a hierarchy ever existed. The
+    // price is that getCircuit() returns the flattened form, which is honest:
+    // the canvas cannot draw a subcircuit yet, so round-tripping a hierarchical
+    // file through the editor would silently lose the structure anyway.
+    let hier = null;
+    if (d.defs || d.blocks.some(b => b.type === 'subckt')) {
+      const fl = flattenCircuit(d);
+      if (fl.err) return { err: 'Subcircuit: ' + fl.err };
+      hier = { defs: Object.keys(d.defs || {}), instances: d.blocks.filter(b => b.type === 'subckt').length,
+        blocksBefore: d.blocks.length, blocksAfter: fl.blocks.length, map: fl.map };
+      d = { ...d, blocks: fl.blocks, wires: fl.wires };
+    }
     const bad = d.blocks.find(b => !this._DEFS[b.type]);
     if (bad) return { err: 'Unknown block type "' + bad.type + '".' };
     // Backfill params added since the file was saved (mirrors ui.js:1363-1370).
@@ -263,8 +380,14 @@ class OpenEMT {
     // the whole point of the case. Explicit runSimulation options still win.
     this._sim = (d.sim && typeof d.sim === 'object') ? { ...d.sim } : null;
     this._pfRan = false;
+    this._hier = hier;
     return { nextId: this.S.nextId, nBlocks: this.S.blocks.length, nWires: this.S.wires.length,
-      vconv: this.S.vconv, sim: this.simSettings() };
+      vconv: this.S.vconv, sim: this.simSettings(),
+      // Only present when the file actually used subcircuits, so the common
+      // case is unchanged. `map` translates "instance/localId" to the flattened
+      // block id, which is what makes query-by-id usable on a hierarchical
+      // model: probe 3 inside instance 7 is map["7/3"].
+      ...(hier ? { subcircuits: hier } : {}) };
   }
 
   // The loaded file's run settings, normalised and validated, or null if the
